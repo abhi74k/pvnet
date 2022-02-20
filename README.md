@@ -1,2 +1,2 @@
 # pvnet
-PVNet implement for CS231a project
+PVNet implementation for CS231a project at Stanford
