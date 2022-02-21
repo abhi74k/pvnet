@@ -2,7 +2,6 @@ import random
 import os
 import numpy as np
 from sklearn.model_selection import train_test_split
-from PIL import Image
 
 ROOT_DIR = "dataset/LINEMOD"
 
@@ -83,30 +82,21 @@ def parse_labels_file(keypoints_path):
 
 
 def compute_unit_vectors(img_mask_coords, keypoints_coords, img_with_unit_vectors):
-    nrows = img_mask_coords.shape[0]
 
-    for row_idx in np.arange(nrows):
+    keypoints_xy_coords = keypoints_coords * [W, H]  # x, y
+    img_mask_xy_coords = img_mask_coords[:, [1, 0]]
 
-        y_mask, x_mask = img_mask_coords[row_idx]
+    nrows = keypoints_xy_coords.shape[0]
+    for keypoint_idx in np.arange(nrows):
+        keypoint_xy = keypoints_xy_coords[keypoint_idx]
+        keypoint_dir_vector_xy = keypoint_xy - img_mask_xy_coords
+        keypoint_dir_vector_mag = np.linalg.norm(keypoint_dir_vector_xy, axis=1).reshape(-1, 1)
+        keypoint_dir_unit_vector_xy = keypoint_dir_vector_xy / keypoint_dir_vector_mag
 
-        for keypoint_idx, keypoint in enumerate(keypoints_coords):
-            x_keypoint, y_keypoint = keypoint
-            x_keypoint, y_keypoint = W * x_keypoint, H * y_keypoint
+        img_mask_x_coords = img_mask_xy_coords[:, 0]
+        img_mask_y_coords = img_mask_xy_coords[:, 1]
 
-            vector_length = np.sqrt((x_keypoint - x_mask) ** 2 + (y_keypoint - y_mask) ** 2)
-
-            x_dir = (x_keypoint - x_mask) / vector_length
-            y_dir = (y_keypoint - y_mask) / vector_length
-
-            img_with_unit_vectors[y_mask, x_mask, 2 * keypoint_idx] = x_dir
-            img_with_unit_vectors[y_mask, x_mask, 2 * keypoint_idx + 1] = y_dir
+        img_with_unit_vectors[img_mask_y_coords, img_mask_x_coords, 2 * keypoint_idx] = keypoint_dir_unit_vector_xy[:, 0]
+        img_with_unit_vectors[img_mask_y_coords, img_mask_x_coords, 2 * keypoint_idx + 1] = keypoint_dir_unit_vector_xy[:, 1]
 
 
-if __name__ == '__main__':
-    entire_dataset = get_files_for_labels(ROOT_DIR, ['cat'])
-    print(entire_dataset.shape)
-
-    X_train, X_test, y_train, y_test = get_test_train_split(ROOT_DIR, get_all_labels()[0:2])
-
-    print(X_train[0:3, :])
-    print(y_train[0:3])
