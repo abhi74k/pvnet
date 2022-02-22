@@ -167,7 +167,7 @@ class PvNet(resnet.ResNet):
 
 
 
-    # This mostly matches ResNet._forward_impl but retains skip connection values for use in upsampling steps
+    # This mostly matches ResNet._forward_impl but retains skip residual values for use in upsampling steps
     def _forward_impl(self, x: Tensor) -> Tensor:
         # See note [TorchScript super()]
         
