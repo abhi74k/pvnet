@@ -1,5 +1,6 @@
 import numpy as np
 from PIL import Image
+import models
 
 from pvnet_utils import get_files_for_labels, ROOT_DIR, parse_labels_file, H, W, compute_unit_vectors
 from pvnet_utils import get_test_train_split, get_all_labels
