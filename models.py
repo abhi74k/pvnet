@@ -16,9 +16,9 @@ class UpsamplingBlock(nn.Module):
         self,
         input: int,
         output: int,
-        scale_factor: Optional[nn.Module] = None,
+        scale_factor: nn.Module = None,
         upsample_mode: str = "bilinear",
-        norm_layer: Optional[Callable[..., nn.Module]] = None
+        norm_layer= None
     ) -> None:
         super(UpsamplingBlock, self).__init__()
         if norm_layer is None:
@@ -29,7 +29,7 @@ class UpsamplingBlock(nn.Module):
         self.relu = nn.ReLU(inplace=True)
         self.upsample = nn.Upsample(output, scale_factor, upsample_mode)
 
-    def forward(self, x: Tensor) -> Tensor:
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         identity = x
 
         out = self.conv1(x)
@@ -62,12 +62,16 @@ class PvNet(resnet.ResNet):
         zero_init_residual: bool = False,
         groups: int = 1,
         width_per_group: int = 64,
-        replace_stride_with_dilation: Optional[List[bool]] = None,
-        norm_layer: Optional[Callable[..., nn.Module]] = None,
+        replace_stride_with_dilation: list[bool] = None,
+        norm_layer = None,
         output_class = True,
         output_vector = False
         ):
-       
+
+        if norm_layer is None:
+            norm_layer = nn.BatchNorm2d
+        self._norm_layer = norm_layer
+
         # TODO: Implement for vector outputs too then remove
         if output_vector:
             raise NotImplementedError
@@ -75,8 +79,9 @@ class PvNet(resnet.ResNet):
         self.output_class = output_class
         self.output_vector = output_vector
 
-        # Init from grandparent, not ResNet function because we have funky stuff to do
-        super().super().__init__()
+        # Init from grandparent, not ResNet function because we have funky stuff to do. EDIT -- not sure how to make this work
+        # super().super().__init__(
+        nn.Module.__init__(self)
         
         # Hardcode BasicBlock because we are only using ResNet18, which doesn't use BottleneckBlock
         block = resnet.BasicBlock
@@ -154,21 +159,21 @@ class PvNet(resnet.ResNet):
 
         # For class, output num_classes+1 channels with probability for each class (including one null class)
         if self.output_class:
-            self.class_out = nn.Conv2D(32, num_classes + 1, kernel_size=1, stride=1, bias=False)
+            self.class_out = nn.Conv2d(32, num_classes + 1, kernel_size=1, stride=1, bias=False)
 
         # For vector, output num_classes*num_keypoints*2, since each class can have num_keypoints, and each keypoint has [u,v]
         if self.output_vector:
-            self.vector_out = nn.Conv2D(3, num_keypoints * num_classes * 2, kernel_size=1, stride=1, bias=False)
+            self.vector_out = nn.Conv2d(3, num_keypoints * num_classes * 2, kernel_size=1, stride=1, bias=False)
         
-        ## TODO: Initialize all modules above with ResNet18 pre-trained weights, where they exist
-        #
-        #  DO THAT HERE
-        #
+        # TODO: Initialize all modules above with ResNet18 pre-trained weights, where they exist
+        resnet18 = models.resnet18(pretrained=True)
+
+        
 
 
 
     # This mostly matches ResNet._forward_impl but retains skip residual values for use in upsampling steps
-    def _forward_impl(self, x: Tensor) -> Tensor:
+    def _forward_impl(self, x: torch.Tensor) -> torch.Tensor:
         # See note [TorchScript super()]
         
         x = self.conv1(x)
@@ -208,7 +213,7 @@ class PvNet(resnet.ResNet):
 
         return outputs
 
-    def forward(self, x: Tensor) -> Tensor:
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self._forward_impl(x)
 
 
