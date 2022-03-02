@@ -16,9 +16,9 @@ class UpsamplingBlock(nn.Module):
         self,
         input: int,
         output: int,
-        scale_factor: Optional[nn.Module] = None,
+        scale_factor: nn.Module = None,
         upsample_mode: str = "bilinear",
-        norm_layer: Optional[Callable[..., nn.Module]] = None
+        norm_layer= None
     ) -> None:
         super(UpsamplingBlock, self).__init__()
         if norm_layer is None:
@@ -27,9 +27,9 @@ class UpsamplingBlock(nn.Module):
         self.conv1 = resnet.conv3x3(input, output, stride = 1)
         self.bn1 = norm_layer(output)
         self.relu = nn.ReLU(inplace=True)
-        self.upsample = nn.Upsample(output, scale_factor, upsample_mode)
+        self.upsample = nn.Upsample(scale_factor = scale_factor, mode = upsample_mode)
 
-    def forward(self, x: Tensor) -> Tensor:
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         identity = x
 
         out = self.conv1(x)
@@ -62,12 +62,17 @@ class PvNet(resnet.ResNet):
         zero_init_residual: bool = False,
         groups: int = 1,
         width_per_group: int = 64,
-        replace_stride_with_dilation: Optional[List[bool]] = None,
-        norm_layer: Optional[Callable[..., nn.Module]] = None,
+        replace_stride_with_dilation: list[bool] = None,
+        norm_layer = None,
         output_class = True,
-        output_vector = False
+        output_vector = False,
+        pretrained = True
         ):
-       
+
+        if norm_layer is None:
+            norm_layer = nn.BatchNorm2d
+        self._norm_layer = norm_layer
+
         # TODO: Implement for vector outputs too then remove
         if output_vector:
             raise NotImplementedError
@@ -75,8 +80,9 @@ class PvNet(resnet.ResNet):
         self.output_class = output_class
         self.output_vector = output_vector
 
-        # Init from grandparent, not ResNet function because we have funky stuff to do
-        super().super().__init__()
+        # Init from grandparent, not ResNet function because we have funky stuff to do. EDIT -- not sure how to make this work
+        # super().super().__init__(
+        nn.Module.__init__(self)
         
         # Hardcode BasicBlock because we are only using ResNet18, which doesn't use BottleneckBlock
         block = resnet.BasicBlock
@@ -134,17 +140,23 @@ class PvNet(resnet.ResNet):
             nn.ReLU(inplace=True)                               
         )
 
-        ## Add upsampling layers
-        
-        self.upsample1 = UpsamplingBlock(256, 128, 2, "bilinear")
-        self.upsample2 = UpsamplingBlock(128, 64, 2, "bilinear")
-        self.upsample3 = UpsamplingBlock(256, 32, 2, "bilinear")
+        self.preUpsampleConv = nn.Sequential(
+            nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=1,
+                                bias=False),
+            norm_layer(256),
+            nn.ReLU(inplace=True)
+        )
+
+        ## Add upsampling layers        
+        self.upsample1 = UpsamplingBlock(256, 128, 2, upsample_mode = "bilinear")
+        self.upsample2 = UpsamplingBlock(128, 64, 2, upsample_mode = "bilinear")
+        self.upsample3 = UpsamplingBlock(64, 64, 2, upsample_mode = "bilinear")
 
         # Final convolution before output layers
         self.endConv = nn.Sequential(
-            nn.Conv2d(32, 32, kernel_size=3, stride=1, padding=1,
+            nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1,
                                 bias=False),
-            norm_layer(32),
+            norm_layer(64),
             nn.ReLU(inplace=True)                               
         )
 
@@ -154,35 +166,42 @@ class PvNet(resnet.ResNet):
 
         # For class, output num_classes+1 channels with probability for each class (including one null class)
         if self.output_class:
-            self.class_out = nn.Conv2D(32, num_classes + 1, kernel_size=1, stride=1, bias=False)
+            self.class_out = nn.Conv2d(64, num_classes + 1, kernel_size=1, stride=1, bias=False)
 
         # For vector, output num_classes*num_keypoints*2, since each class can have num_keypoints, and each keypoint has [u,v]
         if self.output_vector:
-            self.vector_out = nn.Conv2D(3, num_keypoints * num_classes * 2, kernel_size=1, stride=1, bias=False)
+            self.vector_out = nn.Conv2d(64, num_keypoints * num_classes * 2, kernel_size=1, stride=1, bias=False)
         
-        ## TODO: Initialize all modules above with ResNet18 pre-trained weights, where they exist
-        #
-        #  DO THAT HERE
-        #
+        # TODO: Initialize all modules above with ResNet18 pre-trained weights, where they exist
+        if pretrained:
+            resnet18 = models.resnet18(pretrained=True)
+            
+            self.conv1.load_state_dict(resnet18.conv1.state_dict())
+            self.bn1.load_state_dict(resnet18.bn1.state_dict())
+            self.relu.load_state_dict(resnet18.relu.state_dict())
+            self.maxpool.load_state_dict(resnet18.maxpool.state_dict())
 
+            self.layer1.load_state_dict(resnet18.layer1.state_dict())
+            self.layer2.load_state_dict(resnet18.layer2.state_dict())
+            self.layer3.load_state_dict(resnet18.layer3.state_dict())
 
 
     # This mostly matches ResNet._forward_impl but retains skip residual values for use in upsampling steps
-    def _forward_impl(self, x: Tensor) -> Tensor:
+    def _forward_impl(self, x: torch.Tensor) -> torch.Tensor:
         # See note [TorchScript super()]
         
         x = self.conv1(x)
         x = self.bn1(x)
         x = self.relu(x)
-        skip1 = x
+        skip0 = x
         x = self.maxpool(x)
 
         x = self.layer1(x)
-        skip2 = x
+        skip1 = x
         x = self.layer2(x)
-        skip3 = x
+        skip2 = x
         x = self.layer3(x)
-        skip4 = x
+        skip3 = x
         x = self.layer4(x)
 
         # We don't use these steps in PvNet
@@ -190,13 +209,14 @@ class PvNet(resnet.ResNet):
         # x = torch.flatten(x, 1)
         # x = self.fc(x)
         
-        x = self.endConv(x)
+        x = self.reverseConv(x)
+        x = self.preUpsampleConv(x)
 
         # First skip layer addback
-        x = self.upsample1(x + skip4)
-        x = self.upsample2(x + skip3)
-        x = self.upsample3(x + skip2)
-        x = self.endConv(x + skip1)
+        x = self.upsample1(x + skip3)
+        x = self.upsample2(x + skip2)
+        x = self.upsample3(x + skip1)
+        x = self.endConv(x + skip0)
         
         outputs = []
 
@@ -208,32 +228,5 @@ class PvNet(resnet.ResNet):
 
         return outputs
 
-    def forward(self, x: Tensor) -> Tensor:
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self._forward_impl(x)
-
-
-
-
-if __name__ == "__main__":
-    resnet18 = models.resnet18(pretrained=True)
-    newmodel = PvNet()
-    # print(resnet18)
-    i = 0
-    for name, mod in resnet18.named_children():
-        if i>4: break
-        newmodel.add_module(name, mod)
-        i+=1
-    # print(newmodel)
-    print(resnet18)
-
-    # for name, child in newmodel.named_children():
-    #     print("name: {}, child_params: {}".format(name,list(child.named_parameters())))
-
-
-    
-    # print(resnet18.get_submodule("layer4"))
-    # for param in resnet18.parameters():
-        # print(name)
-        # print(type(param),param.size())
-        # print(param)
-    pass
