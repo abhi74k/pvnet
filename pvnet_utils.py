@@ -3,7 +3,7 @@ import os
 import numpy as np
 from sklearn.model_selection import train_test_split
 
-ROOT_DIR = "dataset/LINEMOD"
+ROOT_DIR = "../dataset/LINEMOD"
 
 LABELS = {
     0: 'ape',
@@ -70,13 +70,18 @@ def get_test_train_split(root_dir, labels, test_size=0.33, random_state=42, shuf
     return X_train, X_test, y_train, y_test
 
 
-def parse_labels_file(keypoints_path):
+def parse_labels_file(keypoints_path, num_keypoints = None):
     with open(keypoints_path) as f:
         keypoints_str = f.readline()
 
     keypoints_str_lst =  keypoints_str.split(' ')
     class_label = int(keypoints_str_lst[0])
     keypoints_coords = np.array([float(x) for x in keypoints_str_lst[1:]]).reshape(-1, 2)
+
+    # Datafile may have more keypoints than we want. If specified, only take num_keypoints
+    if num_keypoints is not None:
+        keypoints_coords = keypoints_coords[0:num_keypoints, :]
+
 
     return class_label, keypoints_coords
 

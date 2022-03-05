@@ -218,13 +218,13 @@ class PvNet(resnet.ResNet):
         x = self.upsample3(x + skip1)
         x = self.endConv(x + skip0)
         
-        outputs = []
+        outputs = {}
 
         if self.output_class:
-            outputs+= [self.class_out(x)]
+            outputs['class'] = self.class_out(x)
 
         if self.output_vector:
-            outputs+= [self.vector_out(x)]
+            outputs['vector']= self.vector_out(x)
 
         return outputs
 
