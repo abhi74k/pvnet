@@ -104,4 +104,3 @@ def compute_unit_vectors(img_mask_coords, keypoints_coords, img_with_unit_vector
         img_with_unit_vectors[img_mask_y_coords, img_mask_x_coords, 2 * keypoint_idx] = keypoint_dir_unit_vector_xy[:, 0]
         img_with_unit_vectors[img_mask_y_coords, img_mask_x_coords, 2 * keypoint_idx + 1] = keypoint_dir_unit_vector_xy[:, 1]
 
-
