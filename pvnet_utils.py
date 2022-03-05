@@ -82,7 +82,6 @@ def parse_labels_file(keypoints_path, num_keypoints = None):
     if num_keypoints is not None:
         keypoints_coords = keypoints_coords[0:num_keypoints, :]
 
-
     return class_label, keypoints_coords
 
 

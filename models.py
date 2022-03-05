@@ -69,6 +69,9 @@ class PvNet(resnet.ResNet):
         pretrained = True
         ):
 
+        self.num_classes = num_classes
+        self.num_keypoints = num_keypoints
+
         if norm_layer is None:
             norm_layer = nn.BatchNorm2d
         self._norm_layer = norm_layer
