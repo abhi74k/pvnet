@@ -35,7 +35,9 @@ class LineModReader(Dataset):
         # Get the keypoints
         class_label, keypoint_coords = pvnet_utils.parse_labels_file(keypoints_path, self.num_keypoints)
         assert class_label == pvnet_utils.get_numeric_label(self.labels[index])
-        keypoint_coords = keypoint_coords*[pvnet_utils.W,pvnet_utils.H]
+        
+        # Keypoints are % of image W and Height
+        keypoints_xy_coords = keypoint_coords*[pvnet_utils.W,pvnet_utils.H]
 
         # Convert (H, W, 3) -> (H, W). Find the coordinates where the image is present
         img_mask = np.array( Image.open(mask_path).convert('1')).astype(np.int32)
@@ -51,6 +53,7 @@ class LineModReader(Dataset):
             'class_mask': torch.tensor(img_mask).type(torch.LongTensor),
             'class_vectormap': img_with_unit_vectors, 
             'class_label': torch.tensor(class_label).long(),
+            'obj_keypoint_xy': keypoints_xy_coords,
             'obj_keypoints': keypoint_coords
         }
 
@@ -68,9 +71,21 @@ class LineModReader(Dataset):
             mask = sample['class_mask']
             label = sample['class_label']
             keypoints = sample['obj_keypoints'] 
+            keypoint_vectors = sample['class_vectormap'].transpose(2,0,1)
+            
             key_x, key_y = zip(*(keypoints.tolist()))
             axs[i, 0].imshow(self.tensorToImage(img))
             axs[i, 0].scatter(key_x[0:8],key_y[0:8], marker='v', color="red")
+            
+            # viz vector field arrows for centroid keypoint
+            c, h, w = img.size()
+            x,y = np.meshgrid(np.linspace(0,w-1,50, dtype='int'),np.linspace(0,h-1,50,dtype='int'))
+            u,v = keypoint_vectors[0:2,y,x]
+
+            # Sign flip for u,v vs. x,y
+            v = -v
+
+            axs[i,0].quiver(x,y,u,v, color= 'red', scale = 10, scale_units = 'inches', headwidth=6, headlength=6)
 
             axs[i, 0].set_title('Label: {0} (#{1})'.format(label.item(), pvnet_utils.LABELS[label.item()]))
 

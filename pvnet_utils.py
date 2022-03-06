@@ -86,7 +86,6 @@ def parse_labels_file(keypoints_path, num_keypoints = None):
 
 
 def compute_unit_vectors(img_mask_coords, keypoints_coords, img_with_unit_vectors):
-
     keypoints_xy_coords = keypoints_coords * [W, H]  # x, y
     img_mask_xy_coords = img_mask_coords[:, [1, 0]]
 
