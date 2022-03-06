@@ -3,7 +3,7 @@ import os
 import numpy as np
 from sklearn.model_selection import train_test_split
 
-ROOT_DIR = "../dataset/LINEMOD"
+ROOT_DIR = "dataset/LINEMOD"
 
 LABELS = {
     0: 'ape',
@@ -24,6 +24,9 @@ LABELS = {
 H = 480
 W = 640
 
+NUM_KEY_POINTS = 9 # 1 centroid + 8 bounding box corners
+NUM_CLASSES = len(list(LABELS.values()))
+NUM_TRAINING_CLASSES = NUM_CLASSES + 1 # To indicate none of the objects were found
 
 def get_all_labels():
     return list(LABELS.values())
@@ -85,7 +88,7 @@ def parse_labels_file(keypoints_path, num_keypoints = None):
     return class_label, keypoints_coords
 
 
-def compute_unit_vectors(img_mask_coords, keypoints_coords, img_with_unit_vectors):
+def compute_unit_vectors(class_offset, img_mask_coords, keypoints_coords, img_with_unit_vectors):
     keypoints_xy_coords = keypoints_coords * [W, H]  # x, y
     img_mask_xy_coords = img_mask_coords[:, [1, 0]]
 
@@ -99,6 +102,6 @@ def compute_unit_vectors(img_mask_coords, keypoints_coords, img_with_unit_vector
         img_mask_x_coords = img_mask_xy_coords[:, 0]
         img_mask_y_coords = img_mask_xy_coords[:, 1]
 
-        img_with_unit_vectors[img_mask_y_coords, img_mask_x_coords, 2 * keypoint_idx] = keypoint_dir_unit_vector_xy[:, 0]
-        img_with_unit_vectors[img_mask_y_coords, img_mask_x_coords, 2 * keypoint_idx + 1] = keypoint_dir_unit_vector_xy[:, 1]
+        img_with_unit_vectors[img_mask_y_coords, img_mask_x_coords, class_offset + 2 * keypoint_idx] = keypoint_dir_unit_vector_xy[:, 0]
+        img_with_unit_vectors[img_mask_y_coords, img_mask_x_coords, class_offset + 2 * keypoint_idx + 1] = keypoint_dir_unit_vector_xy[:, 1]
 

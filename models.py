@@ -62,7 +62,7 @@ class PvNet(resnet.ResNet):
         zero_init_residual: bool = False,
         groups: int = 1,
         width_per_group: int = 64,
-        replace_stride_with_dilation: list[bool] = None,
+        replace_stride_with_dilation = None,
         norm_layer = None,
         output_class = True,
         output_vector = False,
@@ -77,8 +77,8 @@ class PvNet(resnet.ResNet):
         self._norm_layer = norm_layer
 
         # TODO: Implement for vector outputs too then remove
-        if output_vector:
-            raise NotImplementedError
+        # if output_vector:
+        #     raise NotImplementedError
 
         self.output_class = output_class
         self.output_vector = output_vector
@@ -168,7 +168,7 @@ class PvNet(resnet.ResNet):
 
         # For vector, output num_classes*num_keypoints*2, since each class can have num_keypoints, and each keypoint has [u,v]
         if self.output_vector:
-            self.vector_out = nn.Conv2d(64, num_keypoints * num_classes * 2, kernel_size=1, stride=1, bias=False)
+            self.vector_out = nn.Conv2d(64, num_keypoints * (num_classes + 1) * 2, kernel_size=1, stride=1, bias=False)
         
         # TODO: Initialize all modules above with ResNet18 pre-trained weights, where they exist
         if pretrained:

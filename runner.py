@@ -4,7 +4,7 @@ import models
 
 from pvnet_utils import get_files_for_labels, ROOT_DIR, parse_labels_file, H, W, compute_unit_vectors
 from pvnet_utils import get_test_train_split, get_all_labels
-
+from pvnet_utils import NUM_TRAINING_CLASSES, NUM_KEY_POINTS
 
 def run_compute_unit_vectors():
     cat_dataset = get_files_for_labels(ROOT_DIR, ['cat'])
@@ -15,8 +15,10 @@ def run_compute_unit_vectors():
     img_mask = np.array(Image.open(mask_path).convert('1')).astype(np.int32)
     img_mask_coords = np.argwhere(img_mask == 1)
 
-    img_with_unit_vectors = np.zeros((H, W, 10 * 2))
-    compute_unit_vectors(img_mask_coords=img_mask_coords, keypoints_coords=keypoint_coords,
+    img_with_unit_vectors = np.zeros((H, W, NUM_TRAINING_CLASSES * NUM_KEY_POINTS * 2))
+    class_relative_offset = int(class_label) * NUM_KEY_POINTS
+
+    compute_unit_vectors(class_offset = class_relative_offset, img_mask_coords=img_mask_coords, keypoints_coords=keypoint_coords,
                          img_with_unit_vectors=img_with_unit_vectors)
 
 
