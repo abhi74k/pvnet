@@ -1,3 +1,8 @@
+"""
+Training for PVNet
+
+"""
+
 from typing import Sequence
 import numpy as np
 import torch
@@ -177,13 +182,13 @@ def _padded_vector_label(keypoint_vector_label: torch.Tensor
     , num_keypoints: int):
     
     # Get size of input label, then expand dim=1 to be num_classes+1
-    size = list(keypoint_vector_label.size())
+    size = list(keypoint_vector_label.shape)
     print(size)
     size[1] = num_classes * num_keypoints * 2
 
     # Set mask equal to label All other class masks will be zero. 
     padded_keypoints = torch.zeros((size))
     # print(padded_keypoints.size())
-    padded_keypoints[:,class_Label, :,:] = keypoint_vector_label
+    padded_keypoints[:,class_Label*num_keypoints*2:(class_Label+1)*num_keypoints*2, :,:] = keypoint_vector_label
     
-    raise NotImplementedError()
+    return padded_keypoints
