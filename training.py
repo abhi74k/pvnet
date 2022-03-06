@@ -98,8 +98,8 @@ def train(epochs,
                     # "Time (current/total) {batch_time.val:.3f}/{batch_time.sum:.3f}\t"
                     # "eta {eta}\t"
                     # "LOSS (current/average) {loss.val:.4f}/{loss.avg:.4f}\t"
-                    .format(e+1, idx+1) 
-                            # num_trainloader, 
+                    .format(e+1, idx+1, 
+                            num_trainloader)#, 
                             # batch_time=batch_time, 
                             # eta=eta, 
                             # loss=net_loss_meter)
