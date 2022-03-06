@@ -48,44 +48,46 @@ def train(epochs,
         
         ## Train
         for idx, batch in enumerate(train_data_loader):
+            print("Batch idx: {}".format(idx))
             
             preds =  model(batch['img'].to(device))
             net_loss = None
             vector_loss = None
             class_loss = None
+            
+            batch_size = batch['img'].size(0)
 
             if 'class' in preds.keys():   
                 print("calculating class loss...")
                 class_target = batch['class_mask']
                 print(class_target.size())
                 print(torch.reshape(batch['class_label'],(-1,1,1)).size())
-                
-                # Turn (0,1) mask into labels [0,num_classes] based on class_label
-                class_target = class_target * torch.reshape(batch['class_label'],(-1,1,1))
-                # Zeros in class mask are actuall "null" class. We want to classify these as index num_classes + 1
-                class_target[batch['class_mask'] == 0] = model.num_classes + 1
-                print(class_target[0])
-                print("Image 1 class label:{}, Min_class: {}, Max_class:".format(batch['class_label'][0],class_target[0].min(), class_target[0].max()))
 
                 # crossentropyloss expects (N, C, H, W) as prediction with probabilities per class c in C, (N, H, W) as output, with values from [0,C-1] for the correct class
 
+                # Turn (0,1) mask into labels [0,num_classes] based on class_label
+                class_target = class_target * torch.reshape(batch['class_label'],(-1,1,1))
+                # Zeros in class mask are actuall "null" class. We want to classify these as index num_classes + 1
+                class_target[batch['class_mask'] == 0] = model.num_classes
+
+                print(preds['class'].shape)
                 # Because we have single-class labels, we need to ignore non-class losses
                 class_loss = class_loss_func(
                     preds['class'], class_target)
-                print("Calculated loss: {}".format(class_loss))
+                print(class_loss)
                 
                 # Have per-sample weights
 
             else:
-                class_loss = torch.zeros(batch_size)
+                class_loss = torch.zeros(1)
 
             if 'vector' in preds.keys():
                 raise NotImplementedError('Vector classification loss not implemented!')
             else:
-               vector_loss = torch.zeros(batch_size)
+               vector_loss = torch.zeros(1)
             
-            print("Class loss shape: {}, Vector loss shape: {}:}".format(class_loss.size(),vector_loss.size()))
-
+            print("Class loss shape: {}, Vector loss shape: {}".format(class_loss.size(),vector_loss.size()))
+            net_loss = class_loss + vector_loss
             net_loss.backward()
             optimizer.step()
 
