@@ -69,6 +69,9 @@ class PvNet(resnet.ResNet):
         pretrained = True
         ):
 
+        self.num_classes = num_classes
+        self.num_keypoints = num_keypoints
+
         if norm_layer is None:
             norm_layer = nn.BatchNorm2d
         self._norm_layer = norm_layer
@@ -153,12 +156,7 @@ class PvNet(resnet.ResNet):
         self.upsample3 = UpsamplingBlock(64, 64, 2, upsample_mode = "bilinear")
 
         # Final convolution before output layers
-        self.endConv = nn.Sequential(
-            nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1,
-                                bias=False),
-            norm_layer(64),
-            nn.ReLU(inplace=True)                               
-        )
+        self.upsample4 = UpsamplingBlock(64, 64, 2, upsample_mode = "bilinear")
 
         
         ## Output convolutions
@@ -216,15 +214,15 @@ class PvNet(resnet.ResNet):
         x = self.upsample1(x + skip3)
         x = self.upsample2(x + skip2)
         x = self.upsample3(x + skip1)
-        x = self.endConv(x + skip0)
+        x = self.upsample4(x + skip0)
         
-        outputs = []
+        outputs = {}
 
         if self.output_class:
-            outputs+= [self.class_out(x)]
+            outputs['class'] = self.class_out(x)
 
         if self.output_vector:
-            outputs+= [self.vector_out(x)]
+            outputs['vector']= self.vector_out(x)
 
         return outputs
 
