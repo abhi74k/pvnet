@@ -37,7 +37,7 @@ class LineModReader(Dataset):
         assert class_label == pvnet_utils.get_numeric_label(self.labels[index])
         
         # Keypoints are % of image W and Height
-        keypoints_xy_coords = keypoint_coords*[pvnet_utils.W,pvnet_utils.H]
+        keypoint_xy_coords = keypoint_coords*[pvnet_utils.W,pvnet_utils.H]
 
         # Convert (H, W, 3) -> (H, W). Find the coordinates where the image is present
         img_mask = np.array( Image.open(mask_path).convert('1')).astype(np.int32)
@@ -53,7 +53,7 @@ class LineModReader(Dataset):
             'class_mask': torch.tensor(img_mask).type(torch.LongTensor),
             'class_vectormap': img_with_unit_vectors, 
             'class_label': torch.tensor(class_label).long(),
-            'obj_keypoint_xy': keypoints_xy_coords,
+            'obj_keypoints_xy': keypoint_xy_coords,
             'obj_keypoints': keypoint_coords
         }
 
