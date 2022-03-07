@@ -9,21 +9,24 @@ import torch
 import torch.nn as nn
 import models
 import data
+from torch.utils.tensorboard import SummaryWriter
+from tqdm import tqdm
+from tqdm import trange
 
 import pvnet_utils
 
-def train(epochs, 
-        train_data_loader,
-        test_data_loader,
-        lr=0.0001, 
-        save="checkpoints/", 
-        theta=0.1, 
-        device="cuda", 
-        pretrained=False,
-        checkpoint=None,
-        model=None,
-        start_epoch=0):
 
+def train(epochs,
+          train_data_loader,
+          test_data_loader,
+          lr=0.0001,
+          save="checkpoints/",
+          theta=0.1,
+          device="cuda",
+          pretrained=False,
+          checkpoint=None,
+          model=None,
+          start_epoch=0):
     # TODO: Implement start from checkpoint
     if checkpoint != None:
         raise NotImplementedError("have not implemented loading from checkpoint")
@@ -34,10 +37,9 @@ def train(epochs,
     num_trainloader = len(train_data_loader)
     num_testloader = len(test_data_loader)
 
-
     # Training utils  
     device = torch.device("cuda:0" if device == "cuda" else "cpu")
-    
+
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
     # Losses
@@ -45,108 +47,80 @@ def train(epochs,
     vector_loss_func = nn.SmoothL1Loss()
 
     # TODO: Implement Tensorboard writing
-    log_dir = 'runs'
+    log_dir = './runs'
+    writer = SummaryWriter(log_dir, comment="pvnet-training")
+
+    cum_vector_loss = 0
+    cum_class_loss = 0
 
     ## Train
-    for e in range(start_epoch, epochs):
-        optimizer.zero_grad() 
-        
+    for epoch in range(start_epoch, epochs):
+        optimizer.zero_grad()
+        running_loss_for_epoch = 0
+        accuracy_for_small_batch = 0
+        net_loss_for_small_batch = 0
+        small_batch_idx = 0
+
         ## Train
-        for idx, batch in enumerate(train_data_loader):
-            print("Batch idx: {}".format(idx))
-            
-            preds =  model(batch['img'].to(device))
-            net_loss = None
-            vector_loss = None
-            class_loss = None
-            
-            batch_size = batch['img'].size(0)
+        with tqdm(train_data_loader, unit="batch", ncols=200, dynamic_ncols=True) as tepoch:
+            for idx, batch in enumerate(tepoch):
+                tepoch.set_description(f"Epoch {epoch + 1}/{epochs}")
 
-            if 'class' in preds.keys():   
-                print("calculating class loss...")
+                preds = model(batch['img'].to(device))
 
-                # Loss calcultion for unit vector predictions
-                unit_vectors_gt = batch['class_vectormap'] # (batch_size, H, W, NUM_KEYPOINTS * 2 * NUM_TRAINING_CLASSES)
-                print(f'unit_vectors_gt: {unit_vectors_gt.shape}')
-
-                unit_vectors_pred = preds['vector'] #([batch_size,  NUM_KEYPOINTS * 2 * NUM_TRAINING_CLASSES, H, W])
-                unit_vectors_pred = unit_vectors_pred.permute(0, 2, 3, 1)
-                print(f'unit_vectors_pred: {unit_vectors_pred.shape}')
-
-                vector_loss = vector_loss_func(unit_vectors_pred.reshape(-1), unit_vectors_gt.reshape(-1))
-                print(f'unit vector loss: {vector_loss}')
-
-                class_target = batch['class_mask']
-                print(class_target.size())
-                print(torch.reshape(batch['class_label'],(-1,1,1)).size())
-
-                # crossentropyloss expects (N, C, H, W) as prediction with probabilities per class c in C, (N, H, W) as output, with values from [0,C-1] for the correct class
-
-                # Prediction dim: (batch_size, # class, H, W)
-                # Convert ground truth to the same dim as prediction
-
-                # Turn (0,1) mask into labels [0,num_classes] based on class_label
-                class_target = class_target * torch.reshape(batch['class_label'],(-1,1,1))
-                # Zeros in class mask are actuall "null" class. We want to classify these as index num_classes + 1
-                class_target[batch['class_mask'] == 0] = model.num_classes
-
-                print(preds['class'].shape)
-                # Because we have single-class labels, we need to ignore non-class losses
-                class_loss = class_loss_func(
-                    preds['class'], class_target)
-                print(class_loss)
-                
-                # Have per-sample weights
-
-            else:
+                vector_loss = torch.zeros(1)
                 class_loss = torch.zeros(1)
 
+                if 'class' in preds.keys():
+                    class_loss = pvnet_utils.compute_img_segmentation_pred_error(preds['class'],
+                                                                                 batch['class_mask'],
+                                                                                 batch['class_label'],
+                                                                                 model.num_classes,
+                                                                                 class_loss_func)
 
-            print("Class loss shape: {}, Vector loss shape: {}".format(class_loss.size(),vector_loss.size()))
-            net_loss = class_loss + vector_loss
-            net_loss.backward()
-            optimizer.step()
+                if 'vector' in preds.keys():
+                    vector_loss = pvnet_utils.compute_keypoint_vector_pred_error(preds['vector'],
+                                                                                 batch['class_vectormap'],
+                                                                                 vector_loss_func)
 
-            num_iters = e * num_trainloader + idx + 1 
-            if (idx + 1 )% 5 == 0 :
-                print(
-                    "Epoch: #{0} Batch: {1}/{2}\t"
-                    # "Time (current/total) {batch_time.val:.3f}/{batch_time.sum:.3f}\t"
-                    # "eta {eta}\t"
-                    # "LOSS (current/average) {loss.val:.4f}/{loss.avg:.4f}\t"
-                    .format(e+1, idx+1, 
-                            num_trainloader)#, 
-                            # batch_time=batch_time, 
-                            # eta=eta, 
-                            # loss=net_loss_meter)
-                )
-                # TODO add tensorbord loss output for class and vector
+                net_loss = class_loss + vector_loss
+                running_loss_for_epoch += net_loss
 
-            # TODO add checkpointing and progress bar outputs
+                accuracy = pvnet_utils.calculate_accuracy(preds['class'], batch['class_mask'], batch['class_label'],
+                                                          model.num_classes)
 
-            del preds
+                accuracy_for_small_batch += accuracy
+                net_loss_for_small_batch += net_loss
+                small_batch_idx += 1
 
-        ## Test
-        model.eval()
-        for idx, batch in enumerate(test_data_loader):
-            #TODO implement test flow
-            print("Testing not implemented")
+                cum_class_loss += class_loss
+                cum_vector_loss += vector_loss
 
-            # TODO we need to add metaparameters here around weights?
-            test_net_loss = class_loss + vector_loss
+                optimizer.zero_grad()
+                net_loss.backward()
+                optimizer.step()
 
-            # TODO add tensorbord test loss output
+                print(f"epoch:{epoch+1}/{epochs}, batch:{idx + 1}/{len(train_data_loader)}, accuracy:{(100.0 * accuracy): .2f}%, "
+                      f"total_loss:{net_loss:.4f}, class_loss:{class_loss:.4f}, vector_loss:{vector_loss:.4f}")
 
+                num_iters = epoch * num_trainloader + idx + 1
 
-        print(
-            "----------------------------------\n"
-            "Epoch: #{0}, Avg. Net Test Loss: {test_avg_loss:.4f}\n" 
-            "----------------------------------"
-            .format(
-                epoch+1, test_avg_loss=test_net_loss_meter.avg
-            )
-        )
+                if small_batch_idx % 5 == 0:
+                    avg_net_loss = net_loss_for_small_batch / small_batch_idx
+                    avg_accuracy_for_few_batches = accuracy_for_small_batch / small_batch_idx
 
+                    writer.add_scalar("Train/Total loss", avg_net_loss, num_iters)
+                    writer.add_scalar("Train/Vector loss", cum_vector_loss / 5.0, num_iters)
+                    writer.add_scalar("Train/Class loss", cum_class_loss / 5.0, num_iters)
+                    writer.add_scalar("Train/Accuracy", avg_accuracy_for_few_batches, num_iters)
+
+                    accuracy_for_small_batch = net_loss_for_small_batch = small_batch_idx = 0
+                    cum_vector_loss = cum_class_loss = 0
+
+                # TODO add checkpointing
+                del preds
+
+        print(f'Training loss:{running_loss_for_epoch / len(train_data_loader)}')
 
 
 """
@@ -174,7 +148,7 @@ Where (N, i, H, W) = keypoint_vector-label
 #     padded_masks = torch.zeros((size))
 #     print(padded_masks.size())
 #     padded_masks[:,class_label, :,:] = class_mask
-    
+
 #     return padded_masks
 
 """
@@ -187,11 +161,12 @@ Take keypoint_vector-label tensor for class_label = i of form (N, 1, H, W)
 Return a padded keypoint vector tensor of shape (N, num_classes + 1, H,W)
 Where (N, i, H, W) = keypoint_vector-labe
 """
+
+
 def _padded_vector_label(keypoint_vector_label: torch.Tensor
-    , class_Label: torch.Tensor
-    , num_classes: int
-    , num_keypoints: int):
-    
+                         , class_Label: torch.Tensor
+                         , num_classes: int
+                         , num_keypoints: int):
     # Get size of input label, then expand dim=1 to be num_classes+1
     size = list(keypoint_vector_label.shape)
     print(size)
@@ -200,6 +175,7 @@ def _padded_vector_label(keypoint_vector_label: torch.Tensor
     # Set mask equal to label All other class masks will be zero. 
     padded_keypoints = torch.zeros((size))
     # print(padded_keypoints.size())
-    padded_keypoints[:,class_Label*num_keypoints*2:(class_Label+1)*num_keypoints*2, :,:] = keypoint_vector_label
-    
+    padded_keypoints[:, class_Label * num_keypoints * 2:(class_Label + 1) * num_keypoints * 2, :,
+    :] = keypoint_vector_label
+
     return padded_keypoints
