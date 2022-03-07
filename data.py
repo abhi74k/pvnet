@@ -10,11 +10,11 @@ import pvnet_utils
 
 class LineModReader(Dataset):
 
-    def __init__(self, dataset, transforms=None):
+    def __init__(self, dataset, transforms=None, num_keypoints = 9):
 
         self.train_files = dataset[0]
         self.labels = dataset[1]
-        self.num_keypoints = 9
+        self.num_keypoints = num_keypoints
 
         assert self.train_files.shape[0] == len(dataset[1])
 
