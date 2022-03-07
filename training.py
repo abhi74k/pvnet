@@ -64,11 +64,26 @@ def train(epochs,
 
             if 'class' in preds.keys():   
                 print("calculating class loss...")
+
+                # Loss calcultion for unit vector predictions
+                unit_vectors_gt = batch['class_vectormap'] # (batch_size, H, W, NUM_KEYPOINTS * 2 * NUM_TRAINING_CLASSES)
+                print(f'unit_vectors_gt: {unit_vectors_gt.shape}')
+
+                unit_vectors_pred = preds['vector'] #([batch_size,  NUM_KEYPOINTS * 2 * NUM_TRAINING_CLASSES, H, W])
+                unit_vectors_pred = unit_vectors_pred.permute(0, 2, 3, 1)
+                print(f'unit_vectors_pred: {unit_vectors_pred.shape}')
+
+                vector_loss = vector_loss_func(unit_vectors_pred.reshape(-1), unit_vectors_gt.reshape(-1))
+                print(f'unit vector loss: {vector_loss}')
+
                 class_target = batch['class_mask']
                 print(class_target.size())
                 print(torch.reshape(batch['class_label'],(-1,1,1)).size())
 
                 # crossentropyloss expects (N, C, H, W) as prediction with probabilities per class c in C, (N, H, W) as output, with values from [0,C-1] for the correct class
+
+                # Prediction dim: (batch_size, # class, H, W)
+                # Convert ground truth to the same dim as prediction
 
                 # Turn (0,1) mask into labels [0,num_classes] based on class_label
                 class_target = class_target * torch.reshape(batch['class_label'],(-1,1,1))
@@ -86,11 +101,7 @@ def train(epochs,
             else:
                 class_loss = torch.zeros(1)
 
-            if 'vector' in preds.keys():
-                raise NotImplementedError('Vector classification loss not implemented!')
-            else:
-               vector_loss = torch.zeros(1)
-            
+
             print("Class loss shape: {}, Vector loss shape: {}".format(class_loss.size(),vector_loss.size()))
             net_loss = class_loss + vector_loss
             net_loss.backward()
