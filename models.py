@@ -254,7 +254,7 @@ class PvNet(nn.Module):
         and each keypoint has [u,v]
         """
         if self.output_vector:
-            self.vector_out = nn.Conv2d(64, num_keypoints * (num_classes + 1) * 2, kernel_size=1, stride=1, bias=False)
+            self.vector_out = nn.Conv2d(64, num_keypoints * num_classes * 2, kernel_size=1, stride=1, bias=False)
 
         # TODO: Initialize all modules above with ResNet18 pre-trained weights, where they exist
         if pretrained:

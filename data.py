@@ -6,12 +6,12 @@ import torchvision.transforms as T
 import matplotlib.pyplot as plt
 import random
 import pvnet_utils
-from pvnet_utils import NUM_TRAINING_CLASSES, NUM_KEY_POINTS
+from pvnet_utils import NUM_CLASSES, NUM_KEY_POINTS
 
 
 class LineModReader(Dataset):
 
-    def __init__(self, dataset, transforms=None, num_classes=NUM_TRAINING_CLASSES, num_keypoints=NUM_KEY_POINTS):
+    def __init__(self, dataset, transforms=None, num_classes=NUM_CLASSES, num_keypoints=NUM_KEY_POINTS):
         self.train_files = dataset[0]
         self.labels = dataset[1]
         self.num_keypoints = num_keypoints
