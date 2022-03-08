@@ -110,6 +110,7 @@ def compute_unit_vectors(class_offset, img_mask_coords, keypoints_coords, img_wi
             img_mask_y_coords, img_mask_x_coords, class_offset + 2 * keypoint_idx + 1] = keypoint_dir_unit_vector_xy[:,
                                                                                          1]
 
+
 def compute_keypoint_vector_pred_error(unit_vectors_preds, unit_vectors_gt, smooth_l1_loss_func):
     # ground_truth dimensions : (batch_size, H, W, NUM_KEYPOINTS * 2 * NUM_TRAINING_CLASSES)
     # unit_vectors_pred : ([batch_size,  NUM_KEYPOINTS * 2 * NUM_TRAINING_CLASSES, H, W])
@@ -155,3 +156,13 @@ def calculate_accuracy(class_preds, class_mask_gt, class_label_gt, num_classes):
     accuracy = num_correct_pred / total_entries
 
     return accuracy
+
+
+def load_from_checkpoint(model, optimizer, checkpoint_path, device):
+    checkpoint = torch.load(checkpoint_path, map_location=device)
+
+    model.load_state_dict(checkpoint["model_state_dict"])
+    optimizer.load_state_dict(checkpoint["optim_state_dict"])
+    start_epoch = checkpoint["epoch"] + 1  # Start from next epoch
+
+    return start_epoch
