@@ -24,23 +24,22 @@ def train(epochs,
           theta=0.1,
           device="cuda",
           pretrained=False,
-          checkpoint=None,
+          checkpoint_path=None,
+          checkpoint_batch_freq=100,
           model=None,
           start_epoch=0):
-    # TODO: Implement start from checkpoint
-    if checkpoint != None:
-        raise NotImplementedError("have not implemented loading from checkpoint")
+    device = torch.device("cuda:0" if device == "cuda" else "cpu")
+
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+
+    if checkpoint_path:
+        start_epoch = pvnet_utils.load_from_checkpoint(model, optimizer, checkpoint_path, device)
+        print("Resuming from: epoch #{}".format(start_epoch + 1))
 
     model.to(device)
     model.train()
 
     num_trainloader = len(train_data_loader)
-    num_testloader = len(test_data_loader)
-
-    # Training utils  
-    device = torch.device("cuda:0" if device == "cuda" else "cpu")
-
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
     # Losses
     class_loss_func = nn.CrossEntropyLoss()
@@ -62,7 +61,7 @@ def train(epochs,
         small_batch_idx = 0
 
         ## Train
-        with tqdm(train_data_loader, unit="batch", ncols=200, dynamic_ncols=True) as tepoch:
+        with tqdm(train_data_loader, unit="batch") as tepoch:
             for idx, batch in enumerate(tepoch):
                 tepoch.set_description(f"Epoch {epoch + 1}/{epochs}")
 
@@ -100,8 +99,9 @@ def train(epochs,
                 net_loss.backward()
                 optimizer.step()
 
-                print(f"epoch:{epoch+1}/{epochs}, batch:{idx + 1}/{len(train_data_loader)}, accuracy:{(100.0 * accuracy): .2f}%, "
-                      f"total_loss:{net_loss:.4f}, class_loss:{class_loss:.4f}, vector_loss:{vector_loss:.4f}")
+                print(
+                    f"epoch:{epoch + 1}/{epochs}, batch:{idx + 1}/{len(train_data_loader)}, accuracy:{(100.0 * accuracy): .2f}%, "
+                    f"total_loss:{net_loss:.4f}, class_loss:{class_loss:.4f}, vector_loss:{vector_loss:.4f}")
 
                 num_iters = epoch * num_trainloader + idx + 1
 
@@ -117,7 +117,15 @@ def train(epochs,
                     accuracy_for_small_batch = net_loss_for_small_batch = small_batch_idx = 0
                     cum_vector_loss = cum_class_loss = 0
 
-                # TODO add checkpointing
+                # Checkpointing logic
+                if (idx + 1) % checkpoint_batch_freq == 0:
+                    ckpt_path = save + "ckpt_{}.pth".format(epoch)
+                    torch.save({
+                        "epoch": epoch,
+                        "model_state_dict": model.state_dict(),
+                        "optim_state_dict": optimizer.state_dict(),
+                    }, ckpt_path)
+
                 del preds
 
         print(f'Training loss:{running_loss_for_epoch / len(train_data_loader)}')
