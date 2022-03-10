@@ -1,8 +1,12 @@
 import random
 import os
+
+import cv2
 import numpy as np
 from sklearn.model_selection import train_test_split
 import torch
+import cv2 as cv
+import pandas as pd
 
 ROOT_DIR = "dataset/LINEMOD"
 
@@ -28,6 +32,11 @@ W = 640
 NUM_KEY_POINTS = 9  # 1 centroid + 8 bounding box corners
 NUM_CLASSES = len(list(LABELS.values()))
 NUM_TRAINING_CLASSES = NUM_CLASSES + 1  # To indicate none of the objects were found
+
+kinect_camera_matrix = np.array([
+    [572.4114, 0., 325.2611],
+    [0., 573.57043, 242.04899],
+    [0., 0., 1.]])
 
 
 def get_all_labels():
@@ -166,3 +175,38 @@ def load_from_checkpoint(model, optimizer, checkpoint_path, device):
     start_epoch = checkpoint["epoch"] + 1  # Start from next epoch
 
     return start_epoch
+
+
+def load_model(model, optimizer, model_path, device):
+    load_from_checkpoint(model, optimizer, model_path, device)
+
+
+"""
+points3d Nx3 matrix
+points2d Nx2 matrix
+"""
+
+
+def solve_pnp(points3d, points2d, method=cv.SOLVEPNP_ITERATIVE):
+    assert points3d.shape[0] == points2d.shape[0]
+
+    if method == cv.SOLVEPNP_EPNP:  # Least squares
+        points3d = np.reshape(points3d.shape[0], 1, points3d.shape[1])  # (N, 1, 3)
+        points2d = np.reshape(points2d.shape[0], 1, points2d.shape[1])  # (N, 1, 2)
+
+    (success, rvec, t) = cv2.solvePnP(np.ascontiguousarray(points3d.astype(np.float64)),
+                                      np.ascontiguousarray(points2d.astype(np.float64)),
+                                      kinect_camera_matrix,
+                                      distCoeffs=np.zeros((4, 1))  # no lens distortion
+                                      )
+
+    R = cv.Rodrigues(rvec)  # To convert from angle-axis to rotation matrix
+
+    return rvec, R, t
+
+
+def get_3d_points(class_label='cat'):
+    points_path = f'{ROOT_DIR}/{class_label}/corners.txt'
+    print(f'3D points path:{points_path}')
+    data = pd.read_csv(points_path, header=None, delimiter=' ')
+    return data.to_numpy()
