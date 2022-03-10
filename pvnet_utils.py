@@ -6,6 +6,7 @@ import numpy as np
 from sklearn.model_selection import train_test_split
 import torch
 import cv2 as cv
+import pandas as pd
 
 ROOT_DIR = "dataset/LINEMOD"
 
@@ -186,7 +187,7 @@ points2d Nx2 matrix
 """
 
 
-def solve_pnp(points3d, points2d, camera_matrix, method=cv.SOLVEPNP_ITERATIVE):
+def solve_pnp(points3d, points2d, method=cv.SOLVEPNP_ITERATIVE):
     assert points3d.shape[0] == points2d.shape[0]
 
     if method == cv.SOLVEPNP_EPNP:  # Least squares
@@ -195,10 +196,17 @@ def solve_pnp(points3d, points2d, camera_matrix, method=cv.SOLVEPNP_ITERATIVE):
 
     (success, rvec, t) = cv2.solvePnP(np.ascontiguousarray(points3d.astype(np.float64)),
                                       np.ascontiguousarray(points2d.astype(np.float64)),
-                                      camera_matrix,
+                                      kinect_camera_matrix,
                                       distCoeffs=np.zeros((4, 1))  # no lens distortion
                                       )
 
     R = cv.Rodrigues(rvec)  # To convert from angle-axis to rotation matrix
 
     return rvec, R, t
+
+
+def get_3d_points(class_label='cat'):
+    points_path = f'{ROOT_DIR}/{class_label}/corners.txt'
+    print(f'3D points path:{points_path}')
+    data = pd.read_csv(points_path, header=None, delimiter=' ')
+    return data.to_numpy()
