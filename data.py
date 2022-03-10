@@ -45,7 +45,7 @@ class LineModReader(Dataset):
         # Augument each pixel where the image is present with a unit vector pointing to each of the keypoints
         rgb_img = Image.open(img_path)
         img_with_unit_vectors = np.zeros((pvnet_utils.H, pvnet_utils.W, self.num_classes * self.num_keypoints * 2))
-        class_relative_offset = int(class_label_str) * self.num_keypoints
+        class_relative_offset = int(class_label_str) * self.num_keypoints *2
         pvnet_utils.compute_unit_vectors(class_relative_offset, img_mask_coords=img_mask_coords,
                                          keypoints_coords=keypoint_coords, img_with_unit_vectors=img_with_unit_vectors)
 
