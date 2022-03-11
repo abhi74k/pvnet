@@ -7,6 +7,11 @@ from sklearn.model_selection import train_test_split
 import torch
 import cv2 as cv
 import pandas as pd
+import keypoints
+import models
+import matplotlib.pyplot as plt
+
+import torchvision.transforms as T
 
 ROOT_DIR = "dataset/LINEMOD"
 
@@ -38,6 +43,7 @@ kinect_camera_matrix = np.array([
     [0., 573.57043, 242.04899],
     [0., 0., 1.]])
 
+tensorToPIL = T.ToPILImage()
 
 def get_all_labels():
     return list(LABELS.values())
@@ -210,3 +216,141 @@ def get_3d_points(class_label='cat'):
     print(f'3D points path:{points_path}')
     data = pd.read_csv(points_path, header=None, delimiter=' ')
     return data.to_numpy()
+
+
+def create_model_and_load_weights(model_weights_path, device='infer'):
+    # Create model
+    pvnet = models.PvNet(
+        num_classes=13,
+        num_keypoints=9,
+        norm_layer=None,
+        output_class=True,
+        output_vector=True)
+
+    optimizer = torch.optim.Adam(pvnet.parameters(), lr=0)
+
+    if device == 'infer':
+        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    else:
+        device = torch.device("cuda:0" if device == "cuda" else "cpu")
+
+    load_model(pvnet, optimizer, model_weights_path, device)
+
+    print('Done loading model weights')
+
+    return pvnet
+
+
+def find_keypoints_with_ransac(class_vector_map, test_class, test_class_mask, num_keypoints):
+    keypointVector = class_vector_map.permute(2, 0, 1).unsqueeze(0)  # [1, k*2*c,h, w]
+
+    padded_segmentation = torch.zeros(1, NUM_CLASSES, test_class_mask.shape[0], test_class_mask.shape[1])
+    padded_segmentation[0, test_class, :, :] = test_class_mask
+
+    b, c, h, w = keypointVector.size()
+    x, y = np.meshgrid(np.linspace(0, w - 1, 50), np.linspace(0, h - 1, 50))
+    u, v = keypointVector[0, test_class * num_keypoints * 2:test_class * num_keypoints * 2 + 2, y, x]
+    v = -v
+
+    found_keypoints, inClass, hypotheses, vote_cts, vectorPtsInClass = keypoints.findKeypoints(
+        padded_segmentation,
+        keypointVector,
+        [test_class],
+        num_hypotheses=128)
+
+    return {
+        'x': x,
+        'y': y,
+        'u': u,
+        'v': v,
+        'found_keypoints': found_keypoints
+    }
+
+
+def plot_test_sample(test_sample):
+    img = test_sample['img']
+    mask = test_sample['class_mask']
+
+    clazz = int(test_sample['class_label'])
+    clazz_str = LABELS[int(test_sample['class_label'])]
+
+    keypoints = test_sample['obj_keypoints']
+    key_x, key_y = zip(*(keypoints.tolist()))
+
+    keypoint_vectors = test_sample['class_vectormap'].transpose(2, 0, 1)
+
+    fig, axs = plt.subplots(1, 2, figsize=(10, 40 / 3))
+    fig.tight_layout()
+
+    # Test image
+    axs[0].imshow(tensorToPIL(img))
+    axs[0].scatter(key_x[0:8], key_y[0:8], marker='v', color="red")
+
+    c, h, w = img.size()
+    x, y = np.meshgrid(np.linspace(0, w - 1, 50, dtype='int'), np.linspace(0, h - 1, 50, dtype='int'))
+    u, v = keypoint_vectors[0:2, y, x]
+    v = -v  # Sign flip for u,v vs. x,y
+
+    axs[0].quiver(x, y, u, v, color='red', scale=10, scale_units='inches', headwidth=6, headlength=6)
+    axs[0].set_title('Label: {0} (#{1})'.format(clazz, clazz_str))
+
+    axs[1].imshow(mask, cmap='gray')
+    axs[1].set_title('Label: {0} (#{1})'.format(clazz, clazz_str))
+
+
+def plot_nn_segmentation(pred_mask):
+    plt.figure(figsize=(10, 10))
+    plt.imshow(pred_mask, cmap='gray')
+    plt.title('NN Segmentation')
+
+
+def plot_ransac_results(img, obj_keypoints_xy, ransac_results):
+    x, y = ransac_results['x'], ransac_results['y']
+    u, v = ransac_results['u'], ransac_results['v']
+    found_keypoints = ransac_results['found_keypoints']
+
+    plt.figure(figsize=(10, 10))
+    plt.imshow(tensorToPIL(img))
+    plt.quiver(x, y, u, v, color='red', scale=10, scale_units='inches', headwidth=6, headlength=6)
+    plt.scatter(obj_keypoints_xy[:, 0], obj_keypoints_xy[:, 1], marker='v', color="orange", linewidths=5)
+    plt.scatter(found_keypoints[:, 0], found_keypoints[:, 1], marker='x', color="blue")
+    plt.title('RANSAC Keypoint Voting')
+
+
+def make_prediction(pvnet, test_sample, num_keypoints):
+    test_class = int(test_sample['class_label'])
+    test_class_str = LABELS[int(test_sample['class_label'])]
+    test_image = tensorToPIL(test_sample['img'])
+    test_class_mask = test_sample['class_mask']
+    obj_keypoints_xy = test_sample['obj_keypoints_xy']
+
+    plot_test_sample(test_sample)
+
+    # For each pixel, a vector to each keypoint for each class
+    class_vector_map = torch.Tensor(test_sample['class_vectormap'])  # [480, 640, k*2*c]
+
+    # Image to tensor
+    Img2Tensor = T.ToTensor()
+    test_image = torch.unsqueeze(Img2Tensor(test_image), 0)
+
+    # Make a prediction
+    pred = pvnet(test_image)
+    pred_class = pred['class']
+    pred_vectors = pred['vector']
+
+    plot_nn_segmentation(pred_class[0, test_class, :, :].detach().numpy())
+
+    # Load the 3D points for the class
+    points3d = get_3d_points(test_class_str)
+
+    # Segmentation mask and unit vectors to 2D points using RANSAC
+    ransac_results = find_keypoints_with_ransac(class_vector_map, test_sample['class_label'],
+                                                            test_class_mask, num_keypoints)
+    plot_ransac_results(test_sample['img'], obj_keypoints_xy, ransac_results)
+    points2d = np.zeros((points3d.shape[0], 2))  # Replace this with keypoint voting
+
+    print(ransac_results['found_keypoints'])
+
+    # PnP to compute R, t from
+    _, R, t = solve_pnp(points3d, points2d)
+

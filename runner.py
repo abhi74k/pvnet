@@ -1,6 +1,11 @@
 import numpy as np
 from PIL import Image
 import models
+import pvnet_utils
+import data
+import training
+import torch
+import torchvision.transforms as T
 
 from pvnet_utils import get_files_for_labels, ROOT_DIR, parse_labels_file, H, W, compute_unit_vectors
 from pvnet_utils import get_test_train_split, get_all_labels
@@ -30,6 +35,20 @@ def run_test_train_split():
 
     print(X_train[0:3, :])
     print(y_train[0:3])
+
+
+def run_prediction():
+
+    NUM_KEYPOINTS = 2
+
+    X_train, X_test, y_train, y_test = pvnet_utils.get_test_train_split(ROOT_DIR, ['duck', 'cat', 'lamp'],
+                                                                        test_size=0.33,
+                                                                        random_state=2,
+                                                                        shuffle=True)
+
+    test_dataset_reader = data.LineModReader((X_test, y_test), num_keypoints=NUM_KEYPOINTS)
+    pvnet = pvnet_utils.create_model_and_load_weights('checkpoints/ckpt_0.pth', device='cpu')
+    pvnet_utils.make_prediction(pvnet, test_dataset_reader[0], NUM_KEYPOINTS)
 
 
 if __name__ == '__main__':
