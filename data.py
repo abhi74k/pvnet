@@ -52,6 +52,7 @@ class LineModReader(Dataset):
         sample = {
             'img': self.imageToTensor(rgb_img),
             'class_mask': torch.tensor(img_mask).type(torch.LongTensor),
+
             'class_vectormap': img_with_unit_vectors,
             'class_label': torch.tensor(class_label_str).long(),
             'obj_keypoints_xy': keypoint_xy_coords,

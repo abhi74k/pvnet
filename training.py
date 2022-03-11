@@ -28,7 +28,9 @@ def train(epochs,
           checkpoint_batch_freq=100,
           model=None,
           start_epoch=0):
+
     device = torch.device("cuda:0" if device == "cuda" else "cpu")
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
     if checkpoint_path:
         start_epoch = pvnet_utils.load_from_checkpoint(model, optimizer, checkpoint_path, device)
