@@ -242,10 +242,9 @@ def create_model_and_load_weights(model_weights_path, device='infer'):
 
 
 def find_keypoints_with_ransac(class_vector_map, test_class, test_class_mask, num_keypoints):
-    keypointVector = class_vector_map.permute(2, 0, 1).unsqueeze(0)  # [1, k*2*c,h, w]
+    keypointVector = class_vector_map.unsqueeze(0).detach()  # [1, k*2*c,h, w]
 
-    padded_segmentation = torch.zeros(1, NUM_CLASSES, test_class_mask.shape[0], test_class_mask.shape[1])
-    padded_segmentation[0, test_class, :, :] = test_class_mask
+    padded_segmentation = test_class_mask.unsqueeze(0)
 
     b, c, h, w = keypointVector.size()
     x, y = np.meshgrid(np.linspace(0, w - 1, 50), np.linspace(0, h - 1, 50))
@@ -256,7 +255,8 @@ def find_keypoints_with_ransac(class_vector_map, test_class, test_class_mask, nu
         padded_segmentation,
         keypointVector,
         [test_class],
-        num_hypotheses=128)
+        num_hypotheses=128,
+        max_iterations=10)
 
     return {
         'x': x,
@@ -337,6 +337,8 @@ def make_prediction(pvnet, test_sample, num_keypoints, root_dir = None):
     pred = pvnet(test_image)
     pred_class = pred['class']
     pred_vectors = pred['vector']
+    print(pred_vectors.size())
+    print(pred_class.size())
 
     plot_nn_segmentation(pred_class[0, test_class, :, :].detach().numpy())
 
@@ -344,8 +346,8 @@ def make_prediction(pvnet, test_sample, num_keypoints, root_dir = None):
     points3d = get_3d_points(test_class_str, root_dir)
 
     # Segmentation mask and unit vectors to 2D points using RANSAC
-    ransac_results = find_keypoints_with_ransac(class_vector_map, test_sample['class_label'],
-                                                            test_class_mask, num_keypoints)
+    ransac_results = find_keypoints_with_ransac(pred_vectors[0], test_sample['class_label'],
+                                                            pred_class[0], num_keypoints)
     plot_ransac_results(test_sample['img'], obj_keypoints_xy, ransac_results)
     points2d = np.zeros((points3d.shape[0], 2))  # Replace this with keypoint voting
 
