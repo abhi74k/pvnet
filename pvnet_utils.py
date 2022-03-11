@@ -72,9 +72,9 @@ def get_files_for_labels(root_dir, labels, shuffle=False):
         images_list = sorted(os.listdir(images_path))
         masks_list = sorted(os.listdir(masks_path))
         keypoints_list = sorted(os.listdir(keypoints_path))
-        pose_list = [pose_path + "pose" + str(pose_i) + ".npy" for pose_i in range(len(images_list))]
+        pose_list = [pose_path + 'pose' + str(pose_i) + ".npy" for pose_i in range(len(images_list))]
 
-        l = [(images_path + image, masks_path + mask, keypoints_path + keypoints, pose_path + pose, label) for image, mask, keypoints, pose in
+        l = [(images_path + image, masks_path + mask, keypoints_path + keypoints, pose, label) for image, mask, keypoints, pose in
              zip(images_list, masks_list, keypoints_list, pose_list)]
         random.shuffle(l)
         results.extend(l)
@@ -323,6 +323,24 @@ def plot_ransac_results(img, obj_keypoints_xy, ransac_results):
     plt.title('RANSAC Keypoint Voting')
 
 
+'''
+K: 3x3 numpy
+R: 3x3 numpy
+t: 1d vector
+points3d: Nx3 dim
+
+Returns:
+pixel_coords: Nx2 dim
+'''
+def project3d_to_2d(K, R, t, points3d):
+
+    camera_coords = (R @ points3d.T) + t.reshape(-1, 1)
+    homogenous_image_coords = K @ camera_coords
+    pixel_coords = homogenous_image_coords[0:2, :] / homogenous_image_coords[2, :]
+    pixel_coords = pixel_coords.T
+
+    return pixel_coords
+
 def make_prediction(pvnet, test_sample, num_keypoints, root_dir = None):
     test_class = int(test_sample['class_label'])
     test_class_str = LABELS[int(test_sample['class_label'])]
@@ -352,9 +370,9 @@ def make_prediction(pvnet, test_sample, num_keypoints, root_dir = None):
     ransac_results = find_keypoints_with_ransac(pred_vectors[0], test_sample['class_label'],
                                                             pred_class[0], num_keypoints)
     plot_ransac_results(test_sample['img'], obj_keypoints_xy, ransac_results)
-    points2d = np.zeros((points3d.shape[0], 2))  # Replace this with keypoint voting
 
-    print(ransac_results['found_keypoints'])
+    points2d = ransac_results['found_keypoints'][1:9, :].detach().numpy() #skip 1st point which is the centroid
+    print(points2d)
 
     # PnP to compute R, t from
     rVec, R, t = solve_pnp(points3d, points2d)
