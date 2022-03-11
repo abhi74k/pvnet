@@ -30,20 +30,23 @@ def train(epochs,
           start_epoch=0):
     device = torch.device("cuda:0" if device == "cuda" else "cpu")
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-
     if checkpoint_path:
         start_epoch = pvnet_utils.load_from_checkpoint(model, optimizer, checkpoint_path, device)
         print("Resuming from: epoch #{}".format(start_epoch + 1))
 
+    device = torch.device("cuda:0" if device == "cuda" else "cpu")
+
     model.to(device)
     model.train()
+
+
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
     num_trainloader = len(train_data_loader)
 
     # Losses
-    class_loss_func = nn.CrossEntropyLoss()
-    vector_loss_func = nn.SmoothL1Loss()
+    class_loss_func = nn.CrossEntropyLoss().to(device)
+    vector_loss_func = nn.SmoothL1Loss().to(device)
 
     # TODO: Implement Tensorboard writing
     log_dir = './runs'
@@ -72,20 +75,20 @@ def train(epochs,
 
                 if 'class' in preds.keys():
                     class_loss = pvnet_utils.compute_img_segmentation_pred_error(preds['class'],
-                                                                                 batch['class_mask'],
-                                                                                 batch['class_label'],
+                                                                                 batch['class_mask'].to(device),
+                                                                                 batch['class_label'].to(device),
                                                                                  model.num_classes,
                                                                                  class_loss_func)
 
                 if 'vector' in preds.keys():
                     vector_loss = pvnet_utils.compute_keypoint_vector_pred_error(preds['vector'],
-                                                                                 batch['class_vectormap'],
+                                                                                 batch['class_vectormap'].to(device),
                                                                                  vector_loss_func)
 
                 net_loss = class_loss + vector_loss
                 running_loss_for_epoch += net_loss
 
-                accuracy = pvnet_utils.calculate_accuracy(preds['class'], batch['class_mask'], batch['class_label'],
+                accuracy = pvnet_utils.calculate_accuracy(preds['class'], batch['class_mask'].to(device), batch['class_label'].to(device),
                                                           model.num_classes)
 
                 accuracy_for_small_batch += accuracy
@@ -127,5 +130,13 @@ def train(epochs,
                     }, ckpt_path)
 
                 del preds
+
+        # Final save after end of epoch
+        ckpt_path = save + "ckpt_{}_final.pth".format(epoch)
+        torch.save({
+            "epoch": epoch,
+            "model_state_dict": model.state_dict(),
+            "optim_state_dict": optimizer.state_dict(),
+        }, ckpt_path)
 
         print(f'Training loss:{running_loss_for_epoch / len(train_data_loader)}')

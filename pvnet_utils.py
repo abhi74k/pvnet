@@ -161,7 +161,7 @@ def calculate_accuracy(class_preds, class_mask_gt, class_label_gt, num_classes):
     img_classes_gt[img_classes_gt == 0] = num_classes
 
     # (N, C, H, W) -> (N, H, W)
-    img_classes_pred = torch.argmax(class_preds.cpu(), axis=1)
+    img_classes_pred = torch.argmax(class_preds, axis=1)
 
     num_correct_pred = (img_classes_pred == img_classes_gt).sum().item()
 
@@ -211,8 +211,8 @@ def solve_pnp(points3d, points2d, method=cv.SOLVEPNP_ITERATIVE):
     return rvec, R, t
 
 
-def get_3d_points(class_label='cat'):
-    points_path = f'{ROOT_DIR}/{class_label}/corners.txt'
+def get_3d_points(class_label='cat', root_dir = ROOT_DIR):
+    points_path = f'{root_dir}/{class_label}/corners.txt'
     print(f'3D points path:{points_path}')
     data = pd.read_csv(points_path, header=None, delimiter=' ')
     return data.to_numpy()
@@ -317,7 +317,7 @@ def plot_ransac_results(img, obj_keypoints_xy, ransac_results):
     plt.title('RANSAC Keypoint Voting')
 
 
-def make_prediction(pvnet, test_sample, num_keypoints):
+def make_prediction(pvnet, test_sample, num_keypoints, root_dir = None):
     test_class = int(test_sample['class_label'])
     test_class_str = LABELS[int(test_sample['class_label'])]
     test_image = tensorToPIL(test_sample['img'])
@@ -341,7 +341,7 @@ def make_prediction(pvnet, test_sample, num_keypoints):
     plot_nn_segmentation(pred_class[0, test_class, :, :].detach().numpy())
 
     # Load the 3D points for the class
-    points3d = get_3d_points(test_class_str)
+    points3d = get_3d_points(test_class_str, root_dir)
 
     # Segmentation mask and unit vectors to 2D points using RANSAC
     ransac_results = find_keypoints_with_ransac(class_vector_map, test_sample['class_label'],
