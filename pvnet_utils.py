@@ -1,5 +1,6 @@
 import random
 import os
+from importlib import reload
 
 import cv2
 import numpy as np
@@ -10,6 +11,9 @@ import pandas as pd
 import keypoints
 import models
 import matplotlib.pyplot as plt
+import draw_utils
+
+reload(draw_utils)
 
 import torchvision.transforms as T
 
@@ -63,13 +67,15 @@ def get_files_for_labels(root_dir, labels, shuffle=False):
         images_path = f'{root_dir}/{label}/JPEGImages/'
         masks_path = f'{root_dir}/{label}/mask/'
         keypoints_path = f'{root_dir}/{label}/labels/'
+        pose_path = f'{root_dir}/{label}/pose/'
 
         images_list = sorted(os.listdir(images_path))
         masks_list = sorted(os.listdir(masks_path))
         keypoints_list = sorted(os.listdir(keypoints_path))
+        pose_list = [pose_path + "pose" + str(pose_i) + ".npy" for pose_i in range(len(images_list))]
 
-        l = [(images_path + image, masks_path + mask, keypoints_path + keypoints, label) for image, mask, keypoints in
-             zip(images_list, masks_list, keypoints_list)]
+        l = [(images_path + image, masks_path + mask, keypoints_path + keypoints, pose_path + pose, label) for image, mask, keypoints, pose in
+             zip(images_list, masks_list, keypoints_list, pose_list)]
         random.shuffle(l)
         results.extend(l)
 
@@ -79,8 +85,8 @@ def get_files_for_labels(root_dir, labels, shuffle=False):
 def get_test_train_split(root_dir, labels, test_size=0.33, random_state=42, shuffle=False):
     dataset = get_files_for_labels(root_dir, labels)
 
-    X = dataset[:, 0:3]
-    y = dataset[:, 3]
+    X = dataset[:, 0:4]
+    y = dataset[:, 4]
 
     X_train, X_test, y_train, y_test = train_test_split(X, y,
                                                         test_size=test_size,
@@ -326,9 +332,6 @@ def make_prediction(pvnet, test_sample, num_keypoints, root_dir = None):
 
     plot_test_sample(test_sample)
 
-    # For each pixel, a vector to each keypoint for each class
-    class_vector_map = torch.Tensor(test_sample['class_vectormap'])  # [480, 640, k*2*c]
-
     # Image to tensor
     Img2Tensor = T.ToTensor()
     test_image = torch.unsqueeze(Img2Tensor(test_image), 0)
@@ -354,5 +357,11 @@ def make_prediction(pvnet, test_sample, num_keypoints, root_dir = None):
     print(ransac_results['found_keypoints'])
 
     # PnP to compute R, t from
-    _, R, t = solve_pnp(points3d, points2d)
+    rVec, R, t = solve_pnp(points3d, points2d)
 
+    # Predict image points
+    image_points_pred = cv2.projectPoints(points3d, rVec, t,
+                                          kinect_camera_matrix,
+                                          np.zeros(shape=[8, 1], dtype='float64'))[0].squeeze()
+
+    draw_utils.visualize_pose(test_sample, image_points_pred)

@@ -48,10 +48,11 @@ def run_prediction():
 
     test_dataset_reader = data.LineModReader((X_test, y_test), num_keypoints=NUM_KEYPOINTS)
     pvnet = pvnet_utils.create_model_and_load_weights('checkpoints/ckpt_0.pth', device='cpu')
-    pvnet_utils.make_prediction(pvnet, test_dataset_reader[0], NUM_KEYPOINTS)
+    pvnet_utils.make_prediction(pvnet, test_dataset_reader[0], NUM_KEYPOINTS, root_dir = ROOT_DIR)
 
 
 if __name__ == '__main__':
 
     #run_test_train_split()
-    run_compute_unit_vectors()
+    #run_compute_unit_vectors()
+    run_prediction()

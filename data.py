@@ -29,7 +29,7 @@ class LineModReader(Dataset):
 
     # Returns img_tensor, segmentation_mask, unit_vector, class_label, keypoints
     def __getitem__(self, index):
-        img_path, mask_path, keypoints_path = self.train_files[index, :]
+        img_path, mask_path, keypoints_path, pose_path = self.train_files[index, :]
 
         # Get the keypoints
         class_label_str, keypoint_coords = pvnet_utils.parse_labels_file(keypoints_path, self.num_keypoints)
@@ -55,7 +55,8 @@ class LineModReader(Dataset):
             'class_vectormap': img_with_unit_vectors,
             'class_label': torch.tensor(class_label_str).long(),
             'obj_keypoints_xy': keypoint_xy_coords,
-            'obj_keypoints': keypoint_coords
+            'obj_keypoints': keypoint_coords,
+            'pose_path': pose_path
         }
 
         return sample
