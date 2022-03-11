@@ -242,7 +242,7 @@ def create_model_and_load_weights(model_weights_path, device='infer'):
 
 
 def find_keypoints_with_ransac(class_vector_map, test_class, test_class_mask, num_keypoints):
-    keypointVector = class_vector_map.unsqueeze(0)  # [1, k*2*c,h, w]
+    keypointVector = class_vector_map.unsqueeze(0).detach()  # [1, k*2*c,h, w]
 
     padded_segmentation = test_class_mask.unsqueeze(0)
 
@@ -255,8 +255,8 @@ def find_keypoints_with_ransac(class_vector_map, test_class, test_class_mask, nu
         padded_segmentation,
         keypointVector,
         [test_class],
-        num_hypotheses=18,
-        max_iterations=1)
+        num_hypotheses=128,
+        max_iterations=10)
 
     return {
         'x': x,
@@ -348,7 +348,7 @@ def make_prediction(pvnet, test_sample, num_keypoints, root_dir = None):
     # Segmentation mask and unit vectors to 2D points using RANSAC
     ransac_results = find_keypoints_with_ransac(pred_vectors[0], test_sample['class_label'],
                                                             pred_class[0], num_keypoints)
-    plot_ransac_results(test_sample['img'], obj_keypoints_xy, ransac_results.detach().numpy())
+    plot_ransac_results(test_sample['img'], obj_keypoints_xy, ransac_results)
     points2d = np.zeros((points3d.shape[0], 2))  # Replace this with keypoint voting
 
     print(ransac_results['found_keypoints'])
