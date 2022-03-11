@@ -126,11 +126,19 @@ def compute_unit_vectors(class_offset, img_mask_coords, keypoints_coords, img_wi
                                                                                          1]
 
 
-def compute_keypoint_vector_pred_error(unit_vectors_preds, unit_vectors_gt, smooth_l1_loss_func):
+def compute_keypoint_vector_pred_error(unit_vectors_preds, unit_vectors_gt, smooth_l1_loss_func, segmentation_gt):
     # ground_truth dimensions : (batch_size, H, W, NUM_KEYPOINTS * 2 * NUM_TRAINING_CLASSES)
     # unit_vectors_pred : ([batch_size,  NUM_KEYPOINTS * 2 * NUM_TRAINING_CLASSES, H, W])
     unit_vectors_preds = unit_vectors_preds.permute(0, 2, 3, 1)
-    loss = smooth_l1_loss_func(unit_vectors_preds.reshape(-1), unit_vectors_gt.reshape(-1))
+    
+    # [B,H,W] => [B,H,W,1]
+    expanded_seg = segmentation_gt.unsqueeze(3)
+    print(expanded_seg.size())
+
+    # Average only over true pixels in class mask
+    # L1 loss function reduces as a sum of all losses. Then divide by # points in class
+    loss = smooth_l1_loss_func((unit_vectors_preds*expanded_seg).reshape(-1), 
+                                  (expanded_seg*unit_vectors_gt).reshape(-1))/expanded_seg.sum()
     return loss
 
 
@@ -317,21 +325,23 @@ def plot_ransac_results(img, obj_keypoints_xy, ransac_results):
     plt.title('RANSAC Keypoint Voting')
 
 
-def make_prediction(pvnet, test_sample, num_keypoints, root_dir = None):
+def make_prediction(pvnet, test_sample, num_keypoints, root_dir = None, device='cpu'):
+    device = torch.device("cuda:0" if device == "cuda" else "cpu")
+
     test_class = int(test_sample['class_label'])
     test_class_str = LABELS[int(test_sample['class_label'])]
     test_image = tensorToPIL(test_sample['img'])
-    test_class_mask = test_sample['class_mask']
+    test_class_mask = test_sample['class_mask'].to(device)
     obj_keypoints_xy = test_sample['obj_keypoints_xy']
 
     plot_test_sample(test_sample)
 
     # For each pixel, a vector to each keypoint for each class
-    class_vector_map = torch.Tensor(test_sample['class_vectormap'])  # [480, 640, k*2*c]
+    class_vector_map = torch.Tensor(test_sample['class_vectormap']).to(device)  # [480, 640, k*2*c]
 
     # Image to tensor
     Img2Tensor = T.ToTensor()
-    test_image = torch.unsqueeze(Img2Tensor(test_image), 0)
+    test_image = torch.unsqueeze(Img2Tensor(test_image), 0).to(device)
 
     # Make a prediction
     pred = pvnet(test_image)
@@ -340,15 +350,15 @@ def make_prediction(pvnet, test_sample, num_keypoints, root_dir = None):
     print(pred_vectors.size())
     print(pred_class.size())
 
-    plot_nn_segmentation(pred_class[0, test_class, :, :].detach().numpy())
+    plot_nn_segmentation(pred_class[0, test_class, :, :].detach().to('cpu').numpy())
 
     # Load the 3D points for the class
     points3d = get_3d_points(test_class_str, root_dir)
 
     # Segmentation mask and unit vectors to 2D points using RANSAC
-    ransac_results = find_keypoints_with_ransac(pred_vectors[0], test_sample['class_label'],
-                                                            pred_class[0], num_keypoints)
-    plot_ransac_results(test_sample['img'], obj_keypoints_xy, ransac_results)
+    ransac_results = find_keypoints_with_ransac(pred_vectors[0].to('cpu'), test_sample['class_label'].to('cpu'),
+                                                            pred_class[0].to('cpu'), num_keypoints)
+    plot_ransac_results(test_sample['img'].to('cpu'), obj_keypoints_xy, ransac_results)
     points2d = np.zeros((points3d.shape[0], 2))  # Replace this with keypoint voting
 
     print(ransac_results['found_keypoints'])

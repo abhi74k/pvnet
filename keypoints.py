@@ -46,6 +46,12 @@ def findKeypoints(segmentationMap: torch.Tensor,
             # [pixels_in_class,y,x]
             inClass = in_class_mask.nonzero() 
             inClassCt = inClass.size(0)
+            print("Pixesl in class {}: {}".format(c,inClassCt))
+
+            # Skip if no class in segment
+            if inClassCt == 0:
+                continue
+
 
             # Slice to only look at vector output for this class
             # [num_classes*num_keypoints*2, H, W] => [num_keypoints*2, H, W]

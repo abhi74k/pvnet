@@ -21,6 +21,7 @@ def train(epochs,
           test_data_loader,
           lr=0.0001,
           save="checkpoints/",
+          save_suffix = "",
           theta=0.1,
           device="cuda",
           pretrained=False,
@@ -30,27 +31,23 @@ def train(epochs,
           start_epoch=0):
     device = torch.device("cuda:0" if device == "cuda" else "cpu")
 
+    model.to(device)
+    model.train()
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+
     if checkpoint_path:
         start_epoch = pvnet_utils.load_from_checkpoint(model, optimizer, checkpoint_path, device)
         print("Resuming from: epoch #{}".format(start_epoch + 1))
-
-    device = torch.device("cuda:0" if device == "cuda" else "cpu")
-
-    model.to(device)
-    model.train()
-
-
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
     num_trainloader = len(train_data_loader)
 
     # Losses
     class_loss_func = nn.CrossEntropyLoss().to(device)
-    vector_loss_func = nn.SmoothL1Loss().to(device)
+    vector_loss_func = nn.SmoothL1Loss(reduction='sum').to(device)
 
     # TODO: Implement Tensorboard writing
     log_dir = './runs'
-    writer = SummaryWriter(log_dir, comment="pvnet-training")
+    writer = SummaryWriter(log_dir, comment="pvnet-training", filename_suffix = save_suffix)
 
     cum_vector_loss = 0
     cum_class_loss = 0
@@ -83,7 +80,8 @@ def train(epochs,
                 if 'vector' in preds.keys():
                     vector_loss = pvnet_utils.compute_keypoint_vector_pred_error(preds['vector'],
                                                                                  batch['class_vectormap'].to(device),
-                                                                                 vector_loss_func)
+                                                                                 vector_loss_func,
+                                                                                 batch['class_mask'].to(device))
 
                 net_loss = class_loss + vector_loss
                 running_loss_for_epoch += net_loss
@@ -122,7 +120,7 @@ def train(epochs,
 
                 # Checkpointing logic
                 if (idx + 1) % checkpoint_batch_freq == 0:
-                    ckpt_path = save + "ckpt_{}.pth".format(epoch)
+                    ckpt_path = save + "ckpt_{}{}.pth".format(epoch, save_suffix)
                     torch.save({
                         "epoch": epoch,
                         "model_state_dict": model.state_dict(),
