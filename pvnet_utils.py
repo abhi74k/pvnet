@@ -134,11 +134,9 @@ def compute_keypoint_vector_pred_error(unit_vectors_preds, unit_vectors_gt, smoo
     # ground_truth dimensions : (batch_size, H, W, NUM_KEYPOINTS * 2 * NUM_TRAINING_CLASSES)
     # unit_vectors_pred : ([batch_size,  NUM_KEYPOINTS * 2 * NUM_TRAINING_CLASSES, H, W])
     unit_vectors_preds = unit_vectors_preds.permute(0, 2, 3, 1)
-    print(unit_vectors_preds.size())
 
     # [B,H,W] => [B,H,W,1]
     expanded_seg = segmentation_gt.unsqueeze(3)
-    print(expanded_seg.size())
 
     # Average only over true pixels in class mask
     # L1 loss function reduces as a sum of all losses. Then divide by # points in class
@@ -262,7 +260,12 @@ def create_model_and_load_weights(model_weights_path,
     return pvnet
 
 
-def find_keypoints_with_ransac(class_vector_map, test_class, test_class_mask, num_keypoints):
+def find_keypoints_with_ransac(class_vector_map,
+                                test_class, 
+                                test_class_mask, 
+                                num_keypoints,
+                                ransac_hypotheses,
+                                ransac_iterations):
     keypointVector = class_vector_map.unsqueeze(0).detach()  # [1, k*2*c,h, w]
 
     padded_segmentation = test_class_mask.unsqueeze(0)
@@ -277,8 +280,8 @@ def find_keypoints_with_ransac(class_vector_map, test_class, test_class_mask, nu
         padded_segmentation,
         keypointVector,
         [test_class],
-        num_hypotheses=128,
-        max_iterations=5)
+        num_hypotheses=ransac_hypotheses,
+        max_iterations=ransac_iterations)
 
     return {
         'x': x,
@@ -370,7 +373,13 @@ def plot_multiclass_mask(class_segmentation, gt_class_label, class_list):
     plt.show()
 
 
-def make_prediction(pvnet, test_sample, num_keypoints, class_list, root_dir = None, device='cpu'):
+def make_prediction(pvnet, test_sample,
+                    num_keypoints, 
+                    class_list, 
+                    root_dir = None, 
+                    device='cpu',
+                    ransac_hypotheses = 128,
+                    ransac_iterations = 10):
     device = torch.device("cuda:0" if device == "cuda" else "cpu")
 
     test_class = int(test_sample['class_label'])
@@ -405,8 +414,12 @@ def make_prediction(pvnet, test_sample, num_keypoints, class_list, root_dir = No
     points3d = get_3d_points(test_class_str, root_dir)
 
     # Segmentation mask and unit vectors to 2D points using RANSAC
-    ransac_results = find_keypoints_with_ransac(pred_vectors[0].to('cpu'), test_sample['class_label'].to('cpu'),
-                                                            pred_class[0].to('cpu'), num_keypoints)
+    ransac_results = find_keypoints_with_ransac(pred_vectors[0].to('cpu'),
+                                                test_sample['class_label'].to('cpu'),
+                                                pred_class[0].to('cpu'), 
+                                                num_keypoints,
+                                                ransac_hypotheses,
+                                                ransac_iterations)
     plot_ransac_results(test_sample['img'].to('cpu'), obj_keypoints_xy, ransac_results)
     points2d = np.zeros((points3d.shape[0], 2))  # Replace this with keypoint voting
 
