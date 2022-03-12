@@ -43,13 +43,13 @@ def train(epochs,
 
     # Losses
     class_loss_func = nn.CrossEntropyLoss(
-      # ignore_index = model.num_classes    #optional -- ignore "null" class when training 
+      ignore_index = model.num_classes    #optional -- ignore "null" class when training 
     ).to(device)
     vector_loss_func = nn.SmoothL1Loss(reduction='sum').to(device)
 
     # TODO: Implement Tensorboard writing
-    log_dir = './runs'
-    writer = SummaryWriter(log_dir, comment="pvnet-training", filename_suffix = save_suffix)
+    log_dir = './runs/{}'.format(save_suffix)
+    writer = SummaryWriter(log_dir, comment="pvnet-training")
 
     cum_vector_loss = 0
     cum_class_loss = 0
@@ -132,7 +132,7 @@ def train(epochs,
                 del preds
 
         # Final save after end of epoch
-        ckpt_path = save + "ckpt_{}_final.pth".format(epoch)
+        ckpt_path = save + "ckpt_{}{}_final.pth".format(epoch,save_suffix)
         torch.save({
             "epoch": epoch,
             "model_state_dict": model.state_dict(),

@@ -234,14 +234,19 @@ def get_3d_points(class_label='cat', root_dir = ROOT_DIR):
     return data.to_numpy()
 
 
-def create_model_and_load_weights(model_weights_path, device='infer'):
+def create_model_and_load_weights(model_weights_path, 
+                                  device='infer',
+                                  num_classes=13,
+                                  num_keypoints=9,
+                                  output_class=True,
+                                  output_vector=True):
     # Create model
     pvnet = models.PvNet(
-        num_classes=13,
-        num_keypoints=9,
+        num_classes=num_classes,
+        num_keypoints=num_keypoints,
         norm_layer=None,
-        output_class=True,
-        output_vector=True)
+        output_class=output_class,
+        output_vector=output_vector)
 
     optimizer = torch.optim.Adam(pvnet.parameters(), lr=0)
 
@@ -341,7 +346,7 @@ def plot_ransac_results(img, obj_keypoints_xy, ransac_results):
 
 def plot_multiclass_mask(class_segmentation, gt_class_label, class_list):
     classviz = torch.max(class_segmentation, dim=0)[1]
-    print((classviz == 0).nonzero().size())
+
     gt_class_name = class_list[gt_class_label]
     num_classes = len(class_list)
     
@@ -355,7 +360,7 @@ def plot_multiclass_mask(class_segmentation, gt_class_label, class_list):
     patches = [ mpatches.Patch(color=colors[i], 
         label="{l}-{i}: {numpix} pixels".format(l=(class_list[i] if i < len(class_list) else "Null"),
             i=i,
-            numpix=(classviz == 0).nonzero().size(0))) 
+            numpix=(classviz == i).nonzero().size(0))) 
         for i in range(0,num_classes+1) ]
     # put those patched as legend-handles into the legend
     plt.legend(handles=patches, bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0. )
@@ -388,6 +393,8 @@ def make_prediction(pvnet, test_sample, num_keypoints, class_list, root_dir = No
     pred_class = pred['class']
     pred_vectors = pred['vector']
  
+    print(pred_class.size())
+
     plot_nn_segmentation(pred_mask = pred_class[0, test_class, :, :].detach().to('cpu').numpy(),
       class_label = test_class,
       class_name = class_list[test_class])
