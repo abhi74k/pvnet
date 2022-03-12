@@ -1,5 +1,6 @@
 import random
 import os
+from importlib import reload
 
 import cv2
 import numpy as np
@@ -13,6 +14,10 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import matplotlib.colors as mcolors
 import matplotlib.cm
+
+import draw_utils
+
+reload(draw_utils)
 
 import torchvision.transforms as T
 
@@ -67,13 +72,15 @@ def get_files_for_labels(root_dir, labels, shuffle=False):
         images_path = f'{root_dir}/{label}/JPEGImages/'
         masks_path = f'{root_dir}/{label}/mask/'
         keypoints_path = f'{root_dir}/{label}/labels/'
+        pose_path = f'{root_dir}/{label}/pose/'
 
         images_list = sorted(os.listdir(images_path))
         masks_list = sorted(os.listdir(masks_path))
         keypoints_list = sorted(os.listdir(keypoints_path))
+        pose_list = [pose_path + 'pose' + str(pose_i) + ".npy" for pose_i in range(len(images_list))]
 
-        l = [(images_path + image, masks_path + mask, keypoints_path + keypoints, label) for image, mask, keypoints in
-             zip(images_list, masks_list, keypoints_list)]
+        l = [(images_path + image, masks_path + mask, keypoints_path + keypoints, pose, label) for image, mask, keypoints, pose in
+             zip(images_list, masks_list, keypoints_list, pose_list)]
         random.shuffle(l)
         results.extend(l)
 
@@ -83,8 +90,8 @@ def get_files_for_labels(root_dir, labels, shuffle=False):
 def get_test_train_split(root_dir, labels, test_size=0.33, random_state=42, shuffle=False):
     dataset = get_files_for_labels(root_dir, labels)
 
-    X = dataset[:, 0:3]
-    y = dataset[:, 3]
+    X = dataset[:, 0:4]
+    y = dataset[:, 4]
 
     X_train, X_test, y_train, y_test = train_test_split(X, y,
                                                         test_size=test_size,
@@ -372,6 +379,23 @@ def plot_multiclass_mask(class_segmentation, gt_class_label, class_list):
     plt.grid(True)
     plt.show()
 
+    '''
+K: 3x3 numpy
+R: 3x3 numpy
+t: 1d vector
+points3d: Nx3 dim
+
+Returns:
+pixel_coords: Nx2 dim
+'''
+def project3d_to_2d(K, R, t, points3d):
+
+    camera_coords = (R @ points3d.T) + t.reshape(-1, 1)
+    homogenous_image_coords = K @ camera_coords
+    pixel_coords = homogenous_image_coords[0:2, :] / homogenous_image_coords[2, :]
+    pixel_coords = pixel_coords.T
+
+    return pixel_coords
 
 def make_prediction(pvnet, test_sample,
                     num_keypoints, 
@@ -390,8 +414,10 @@ def make_prediction(pvnet, test_sample,
 
     plot_test_sample(test_sample, class_list)
 
+
     # For each pixel, a vector to each keypoint for each class
     class_vector_map = torch.Tensor(test_sample['class_vectormap']).to(device)  # [480, 640, k*2*c]
+
 
     # Image to tensor
     Img2Tensor = T.ToTensor()
@@ -414,6 +440,7 @@ def make_prediction(pvnet, test_sample,
     points3d = get_3d_points(test_class_str, root_dir)
 
     # Segmentation mask and unit vectors to 2D points using RANSAC
+
     ransac_results = find_keypoints_with_ransac(pred_vectors[0].to('cpu'),
                                                 test_sample['class_label'].to('cpu'),
                                                 pred_class[0].to('cpu'), 
@@ -421,10 +448,17 @@ def make_prediction(pvnet, test_sample,
                                                 ransac_hypotheses,
                                                 ransac_iterations)
     plot_ransac_results(test_sample['img'].to('cpu'), obj_keypoints_xy, ransac_results)
-    points2d = np.zeros((points3d.shape[0], 2))  # Replace this with keypoint voting
 
-    print(ransac_results['found_keypoints'])
+
+    points2d = ransac_results['found_keypoints'][1:9, :].detach().numpy() #skip 1st point which is the centroid
+    print(points2d)
 
     # PnP to compute R, t from
-    _, R, t = solve_pnp(points3d, points2d)
+    rVec, R, t = solve_pnp(points3d, points2d)
 
+    # Predict image points
+    image_points_pred = cv2.projectPoints(points3d, rVec, t,
+                                          kinect_camera_matrix,
+                                          np.zeros(shape=[8, 1], dtype='float64'))[0].squeeze()
+
+    draw_utils.visualize_pose(test_sample, image_points_pred)
