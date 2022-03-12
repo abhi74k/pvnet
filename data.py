@@ -38,7 +38,7 @@ class LineModReader(Dataset):
         class_label_str, keypoint_coords = pvnet_utils.parse_labels_file(keypoints_path, self.num_keypoints)
         assert class_label_str == pvnet_utils.get_numeric_label(self.labels[index])
 
-        # If we have < 13 classes, we need to adjust offset for this dataset
+        # We cannot assume that class_idx in the dataset will be the same as hardcoded labels
         class_name = LABELS[int(class_label_str)]
         class_idx = self.class_list.index(class_name)
 

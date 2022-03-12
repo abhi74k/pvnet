@@ -160,19 +160,20 @@ def compute_img_segmentation_pred_error(class_preds, class_mask_gt, class_label_
     class_mask_gt = class_mask_gt * torch.reshape(class_label_gt, (-1, 1, 1))
     # Zeros in class mask are actual "null" class. We want to classify these as index num_classes + 1
     class_mask_gt[null_pixels] = num_classes
-
-    # Because we have single-class labels, we need to ignore non-class losses
     class_loss = loss_func(class_preds, class_mask_gt)
 
     return class_loss
 
 
 def calculate_accuracy(class_preds, class_mask_gt, class_label_gt, num_classes):
+    # Save null-class pixels
+    null_pixels = class_mask_gt == 0
+    
     # Convert 1D tensor of labels to (N, H, W)
     img_classes_gt = class_mask_gt * torch.reshape(class_label_gt, (-1, 1, 1))
 
     # Convert 0 to the correct class label
-    img_classes_gt[img_classes_gt == 0] = num_classes
+    img_classes_gt[null_pixels] = num_classes
 
     # (N, C, H, W) -> (N, H, W)
     img_classes_pred = torch.argmax(class_preds, axis=1)
@@ -271,8 +272,8 @@ def find_keypoints_with_ransac(class_vector_map, test_class, test_class_mask, nu
         padded_segmentation,
         keypointVector,
         [test_class],
-        num_hypotheses=128,
-        max_iterations=10)
+        num_hypotheses=10,
+        max_iterations=5)
 
     return {
         'x': x,
@@ -335,9 +336,11 @@ def plot_ransac_results(img, obj_keypoints_xy, ransac_results):
     plt.scatter(found_keypoints[:, 0], found_keypoints[:, 1], marker='x', color="blue")
     plt.title('RANSAC Keypoint Voting')
 
-def plot_multiclass_mask(class_segmentation, gt_class_label, num_classes, class_list):
+def plot_multiclass_mask(class_segmentation, gt_class_label, class_list):
     classviz = torch.max(class_segmentation, dim=0)[1]
+    print((classviz == 0).nonzero().size())
     gt_class_name = class_list[gt_class_label]
+    num_classes = len(class_list)
     
     # Normalize to always show from 0 -> num_classes patches
     cm = matplotlib.cm.get_cmap('tab20', num_classes + 1)
@@ -345,12 +348,12 @@ def plot_multiclass_mask(class_segmentation, gt_class_label, num_classes, class_
     im = plt.imshow(classviz.to('cpu'),norm=norm, cmap = cm, interpolation='none')
     
     # Create color patches for legend
-    colors = [im.cmap(value) for value in range(0,14)]
+    colors = [im.cmap(value) for value in range(0,num_classes+1)]
     patches = [ mpatches.Patch(color=colors[i], 
         label="{l}-{i}: {numpix} pixels".format(l=(class_list[i] if i < len(class_list) else "Null"),
             i=i,
-            numpix=classviz[classviz==i].nonzero().size(0))) 
-        for i in range(0,14) ]
+            numpix=(classviz == 0).nonzero().size(0))) 
+        for i in range(0,num_classes+1) ]
     # put those patched as legend-handles into the legend
     plt.legend(handles=patches, bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0. )
 
@@ -386,8 +389,7 @@ def make_prediction(pvnet, test_sample, num_keypoints, class_list, root_dir = No
       class_label = test_class,
       class_name = class_list[test_class])
 
-    plot_multiclass_mask(pred_class[0], test_class, class_list = class_list,
-      class_name = class_list[test_class])
+    plot_multiclass_mask(pred_class[0], test_class, class_list = class_list)
 
     # Load the 3D points for the class
     points3d = get_3d_points(test_class_str, root_dir)
