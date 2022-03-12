@@ -42,7 +42,7 @@ def train(epochs,
     num_trainloader = len(train_data_loader)
 
     # Losses
-    class_loss_func = nn.CrossEntropyLoss().to(device)
+    class_loss_func = nn.CrossEntropyLoss(ignore_index = model.num_classes).to(device)
     vector_loss_func = nn.SmoothL1Loss(reduction='sum').to(device)
 
     # TODO: Implement Tensorboard writing

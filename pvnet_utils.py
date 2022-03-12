@@ -134,7 +134,8 @@ def compute_keypoint_vector_pred_error(unit_vectors_preds, unit_vectors_gt, smoo
     # ground_truth dimensions : (batch_size, H, W, NUM_KEYPOINTS * 2 * NUM_TRAINING_CLASSES)
     # unit_vectors_pred : ([batch_size,  NUM_KEYPOINTS * 2 * NUM_TRAINING_CLASSES, H, W])
     unit_vectors_preds = unit_vectors_preds.permute(0, 2, 3, 1)
-    
+    print(unit_vectors_preds.size())
+
     # [B,H,W] => [B,H,W,1]
     expanded_seg = segmentation_gt.unsqueeze(3)
     print(expanded_seg.size())
@@ -147,7 +148,7 @@ def compute_keypoint_vector_pred_error(unit_vectors_preds, unit_vectors_gt, smoo
 
 
 def compute_img_segmentation_pred_error(class_preds, class_mask_gt, class_label_gt, num_classes,
-                                        cross_entropy_loss_func):
+                                        loss_func):
     # cross entropy loss expects (N, C, H, W) as prediction with probabilities per class c in C, (N, H, W) as output,
     # with values from [0,C-1] for the correct class
 
@@ -155,12 +156,13 @@ def compute_img_segmentation_pred_error(class_preds, class_mask_gt, class_label_
     # Convert ground truth to the same dim as prediction
 
     # Turn (0,1) mask into labels [0,num_classes] based on class_label
+    null_pixels = (class_mask_gt == 0)
     class_mask_gt = class_mask_gt * torch.reshape(class_label_gt, (-1, 1, 1))
     # Zeros in class mask are actual "null" class. We want to classify these as index num_classes + 1
-    class_mask_gt[class_mask_gt == 0] = num_classes
+    class_mask_gt[null_pixels] = num_classes
 
     # Because we have single-class labels, we need to ignore non-class losses
-    class_loss = cross_entropy_loss_func(class_preds, class_mask_gt)
+    class_loss = loss_func(class_preds, class_mask_gt)
 
     return class_loss
 
@@ -281,12 +283,12 @@ def find_keypoints_with_ransac(class_vector_map, test_class, test_class_mask, nu
     }
 
 
-def plot_test_sample(test_sample):
+def plot_test_sample(test_sample, class_list):
     img = test_sample['img']
     mask = test_sample['class_mask']
 
     clazz = int(test_sample['class_label'])
-    clazz_str = LABELS[int(test_sample['class_label'])]
+    clazz_str = class_list[int(test_sample['class_label'])]
 
     keypoints = test_sample['obj_keypoints']
     key_x, key_y = zip(*(keypoints.tolist()))
@@ -314,10 +316,10 @@ def plot_test_sample(test_sample):
     plt.show()
 
 
-def plot_nn_segmentation(pred_mask, class_label):
+def plot_nn_segmentation(pred_mask, class_label, class_name):
     plt.figure(figsize=(10, 10))
     im = plt.imshow(pred_mask, cmap='gray')
-    plt.title('NN Segmentation for {}({})'.format(LABELS[class_label],class_label))
+    plt.title('NN Segmentation for {}({})'.format(class_name,class_label))
     plt.show()
 
 
@@ -333,8 +335,9 @@ def plot_ransac_results(img, obj_keypoints_xy, ransac_results):
     plt.scatter(found_keypoints[:, 0], found_keypoints[:, 1], marker='x', color="blue")
     plt.title('RANSAC Keypoint Voting')
 
-def plot_multiclass_mask(class_segmentation, gt_class_label, num_classes = 13):
+def plot_multiclass_mask(class_segmentation, gt_class_label, num_classes, class_list):
     classviz = torch.max(class_segmentation, dim=0)[1]
+    gt_class_name = class_list[gt_class_label]
     
     # Normalize to always show from 0 -> num_classes patches
     cm = matplotlib.cm.get_cmap('tab20', num_classes + 1)
@@ -344,28 +347,28 @@ def plot_multiclass_mask(class_segmentation, gt_class_label, num_classes = 13):
     # Create color patches for legend
     colors = [im.cmap(value) for value in range(0,14)]
     patches = [ mpatches.Patch(color=colors[i], 
-        label="{l}-{i}: {numpix} pixels".format(l=(LABELS[i] if i in LABELS else "Null"),
+        label="{l}-{i}: {numpix} pixels".format(l=(class_list[i] if i < len(class_list) else "Null"),
             i=i,
             numpix=classviz[classviz==i].nonzero().size(0))) 
         for i in range(0,14) ]
     # put those patched as legend-handles into the legend
     plt.legend(handles=patches, bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0. )
 
-    plt.title('NN Multi-Class Segmentation (GT Class: {}({}))'.format(LABELS[gt_class_label],gt_class_label))
+    plt.title('NN Multi-Class Segmentation (GT Class: {}({}))'.format(gt_class_name,gt_class_label))
     plt.grid(True)
     plt.show()
 
 
-def make_prediction(pvnet, test_sample, num_keypoints, root_dir = None, device='cpu'):
+def make_prediction(pvnet, test_sample, num_keypoints, class_list, root_dir = None, device='cpu'):
     device = torch.device("cuda:0" if device == "cuda" else "cpu")
 
     test_class = int(test_sample['class_label'])
-    test_class_str = LABELS[int(test_sample['class_label'])]
+    test_class_str = class_list[int(test_sample['class_label'])]
     test_image = tensorToPIL(test_sample['img'])
     test_class_mask = test_sample['class_mask'].to(device)
     obj_keypoints_xy = test_sample['obj_keypoints_xy']
 
-    plot_test_sample(test_sample)
+    plot_test_sample(test_sample, class_list)
 
     # For each pixel, a vector to each keypoint for each class
     class_vector_map = torch.Tensor(test_sample['class_vectormap']).to(device)  # [480, 640, k*2*c]
@@ -380,9 +383,11 @@ def make_prediction(pvnet, test_sample, num_keypoints, root_dir = None, device='
     pred_vectors = pred['vector']
  
     plot_nn_segmentation(pred_mask = pred_class[0, test_class, :, :].detach().to('cpu').numpy(),
-      class_label = test_class)
+      class_label = test_class,
+      class_name = class_list[test_class])
 
-    plot_multiclass_mask(pred_class[0], test_class, num_classes = 13)
+    plot_multiclass_mask(pred_class[0], test_class, class_list = class_list,
+      class_name = class_list[test_class])
 
     # Load the 3D points for the class
     points3d = get_3d_points(test_class_str, root_dir)

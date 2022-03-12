@@ -6,16 +6,19 @@ import torchvision.transforms as T
 import matplotlib.pyplot as plt
 import random
 import pvnet_utils
-from pvnet_utils import NUM_CLASSES, NUM_KEY_POINTS
+from pvnet_utils import NUM_CLASSES, NUM_KEY_POINTS, LABELS
 
 
 class LineModReader(Dataset):
 
-    def __init__(self, dataset, transforms=None, num_classes=NUM_CLASSES, num_keypoints=NUM_KEY_POINTS):
+    def __init__(self, dataset, class_list, transforms=None, num_keypoints=NUM_KEY_POINTS):
         self.train_files = dataset[0]
         self.labels = dataset[1]
         self.num_keypoints = num_keypoints
-        self.num_classes = num_classes
+        
+        self.class_list = class_list
+
+        self.num_classes = len(class_list)
 
         assert self.train_files.shape[0] == len(dataset[1])
 
@@ -35,6 +38,10 @@ class LineModReader(Dataset):
         class_label_str, keypoint_coords = pvnet_utils.parse_labels_file(keypoints_path, self.num_keypoints)
         assert class_label_str == pvnet_utils.get_numeric_label(self.labels[index])
 
+        # If we have < 13 classes, we need to adjust offset for this dataset
+        class_name = LABELS[int(class_label_str)]
+        class_idx = self.class_list.index(class_name)
+
         # Keypoints are % of image W and Height
         keypoint_xy_coords = keypoint_coords * [pvnet_utils.W, pvnet_utils.H]
 
@@ -45,7 +52,7 @@ class LineModReader(Dataset):
         # Augument each pixel where the image is present with a unit vector pointing to each of the keypoints
         rgb_img = Image.open(img_path)
         img_with_unit_vectors = np.zeros((pvnet_utils.H, pvnet_utils.W, self.num_classes * self.num_keypoints * 2))
-        class_relative_offset = int(class_label_str) * self.num_keypoints *2
+        class_relative_offset = class_idx * self.num_keypoints *2
         pvnet_utils.compute_unit_vectors(class_relative_offset, img_mask_coords=img_mask_coords,
                                          keypoints_coords=keypoint_coords, img_with_unit_vectors=img_with_unit_vectors)
 
@@ -53,7 +60,7 @@ class LineModReader(Dataset):
             'img': self.imageToTensor(rgb_img),
             'class_mask': torch.tensor(img_mask).type(torch.LongTensor),
             'class_vectormap': img_with_unit_vectors,
-            'class_label': torch.tensor(class_label_str).long(),
+            'class_label': torch.tensor(class_idx).long(),
             'obj_keypoints_xy': keypoint_xy_coords,
             'obj_keypoints': keypoint_coords
         }
@@ -88,8 +95,8 @@ class LineModReader(Dataset):
 
             axs[i, 0].quiver(x, y, u, v, color='red', scale=10, scale_units='inches', headwidth=6, headlength=6)
 
-            axs[i, 0].set_title('Label: {0} (#{1})'.format(label.item(), pvnet_utils.LABELS[label.item()]))
+            axs[i, 0].set_title('Label: {0} (#{1})'.format(label.item(), self.class_list[label.item()]))
 
             img_mask_scaled = np.where(mask.squeeze().numpy() == 1, [255], [0])
             axs[i, 1].imshow(img_mask_scaled, cmap='gray')
-            axs[i, 1].set_title('Label: {0} (#{1})'.format(label.item(), pvnet_utils.LABELS[label.item()]))
+            axs[i, 1].set_title('Label: {0} (#{1})'.format(label.item(), self.class_list[label.item()]))
