@@ -35,6 +35,7 @@ def findKeypoints(segmentationMap: torch.Tensor,
         # [C,H,W] => ([1,H,W], [1,H,W])
         _ , singleClassMap = torch.max(segmentationMap[bi], dim=0)
         print(singleClassMap.size())
+        print(torch.unique(singleClassMap))
 
         # [H,W,num_class*num_keypoint*2]
         singleKeyVectorMap = keypointVectorMap[bi]

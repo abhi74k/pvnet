@@ -10,6 +10,8 @@ import pandas as pd
 import keypoints
 import models
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+import matplotlib.colors as mcolors
 
 import torchvision.transforms as T
 
@@ -185,6 +187,7 @@ def load_from_checkpoint(model, optimizer, checkpoint_path, device):
     checkpoint = torch.load(checkpoint_path, map_location=device)
 
     model.load_state_dict(checkpoint["model_state_dict"])
+    model.to(device)
     optimizer.load_state_dict(checkpoint["optim_state_dict"])
     start_epoch = checkpoint["epoch"] + 1  # Start from next epoch
 
@@ -256,7 +259,11 @@ def find_keypoints_with_ransac(class_vector_map, test_class, test_class_mask, nu
 
     b, c, h, w = keypointVector.size()
     x, y = np.meshgrid(np.linspace(0, w - 1, 50), np.linspace(0, h - 1, 50))
-    u, v = keypointVector[0, test_class * num_keypoints * 2:test_class * num_keypoints * 2 + 2, y, x]
+    
+    print(test_class_mask[test_class:test_class+1].size())
+    print(keypointVector.size())
+
+    u, v = keypointVector[0, test_class * num_keypoints * 2:test_class * num_keypoints * 2 + 2, y, x]*test_class_mask.detach()[test_class:test_class+1, y, x]
     v = -v
 
     found_keypoints, inClass, hypotheses, vote_cts, vectorPtsInClass = keypoints.findKeypoints(
@@ -305,11 +312,16 @@ def plot_test_sample(test_sample):
     axs[1].imshow(mask, cmap='gray')
     axs[1].set_title('Label: {0} (#{1})'.format(clazz, clazz_str))
 
+    plt.show()
+
 
 def plot_nn_segmentation(pred_mask):
     plt.figure(figsize=(10, 10))
-    plt.imshow(pred_mask, cmap='gray')
+    print(pred_mask.max())
+    print(pred_mask.min())
+    im = plt.imshow(pred_mask, cmap='gray')
     plt.title('NN Segmentation')
+    plt.show()
 
 
 def plot_ransac_results(img, obj_keypoints_xy, ransac_results):
@@ -352,8 +364,30 @@ def make_prediction(pvnet, test_sample, num_keypoints, root_dir = None, device='
 
     plot_nn_segmentation(pred_class[0, test_class, :, :].detach().to('cpu').numpy())
 
+    classviz = torch.max(pred_class[0], dim=0)[1]
+    for k in range(0,14):
+      print("Of class {}, {}".format(k,classviz[classviz==k].nonzero().size(0)))
+    class_im = T.ToPILImage()(classviz.type(torch.FloatTensor))
+
+    
+
+    im = plt.imshow(class_im,cmap='tab20')#,vmin=0,vmax=19)
+    colors = [im.cmap(value) for value in range(0,20)]
+    print(colors)
+    # create a patch (proxy artist) for every color 
+    patches = [ mpatches.Patch(color=colors[i], label="{l}".format(l=i) ) for i in range(0,20) ]
+    # put those patched as legend-handles into the legend
+    plt.legend(handles=patches, bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0. )
+
+    plt.grid(True)
+    plt.show()
+
+
     # Load the 3D points for the class
     points3d = get_3d_points(test_class_str, root_dir)
+
+    print(test_sample['class_label'])
+    print(pred_class[0,test_sample['class_label']].max())
 
     # Segmentation mask and unit vectors to 2D points using RANSAC
     ransac_results = find_keypoints_with_ransac(pred_vectors[0].to('cpu'), test_sample['class_label'].to('cpu'),
