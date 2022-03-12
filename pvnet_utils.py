@@ -334,6 +334,9 @@ def plot_ransac_results(img, obj_keypoints_xy, ransac_results):
     plt.quiver(x, y, u, v, color='red', scale=10, scale_units='inches', headwidth=6, headlength=6)
     plt.scatter(obj_keypoints_xy[:, 0], obj_keypoints_xy[:, 1], marker='v', color="orange", linewidths=5)
     plt.scatter(found_keypoints[:, 0], found_keypoints[:, 1], marker='x', color="blue")
+    plt.xlim([0,img.size(1)])
+    plt.ylim([0,img.size(0)])
+
     plt.title('RANSAC Keypoint Voting')
 
 def plot_multiclass_mask(class_segmentation, gt_class_label, class_list):
