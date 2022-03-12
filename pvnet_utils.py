@@ -272,7 +272,7 @@ def find_keypoints_with_ransac(class_vector_map, test_class, test_class_mask, nu
         padded_segmentation,
         keypointVector,
         [test_class],
-        num_hypotheses=10,
+        num_hypotheses=128,
         max_iterations=5)
 
     return {
@@ -334,8 +334,8 @@ def plot_ransac_results(img, obj_keypoints_xy, ransac_results):
     plt.quiver(x, y, u, v, color='red', scale=10, scale_units='inches', headwidth=6, headlength=6)
     plt.scatter(obj_keypoints_xy[:, 0], obj_keypoints_xy[:, 1], marker='v', color="orange", linewidths=5)
     plt.scatter(found_keypoints[:, 0], found_keypoints[:, 1], marker='x', color="blue")
-    plt.xlim([0,img.size(1)])
-    plt.ylim([0,img.size(0)])
+    plt.xlim([0,img.size(2)])
+    plt.ylim([img.size(1),0])
 
     plt.title('RANSAC Keypoint Voting')
 
