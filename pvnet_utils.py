@@ -12,6 +12,7 @@ import models
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import matplotlib.colors as mcolors
+import matplotlib.cm
 
 import torchvision.transforms as T
 
@@ -32,6 +33,7 @@ LABELS = {
     11: 'lamp',
     12: 'phone'
 }
+
 
 H = 480
 W = 640
@@ -260,9 +262,6 @@ def find_keypoints_with_ransac(class_vector_map, test_class, test_class_mask, nu
     b, c, h, w = keypointVector.size()
     x, y = np.meshgrid(np.linspace(0, w - 1, 50), np.linspace(0, h - 1, 50))
     
-    print(test_class_mask[test_class:test_class+1].size())
-    print(keypointVector.size())
-
     u, v = keypointVector[0, test_class * num_keypoints * 2:test_class * num_keypoints * 2 + 2, y, x]*test_class_mask.detach()[test_class:test_class+1, y, x]
     v = -v
 
@@ -315,12 +314,10 @@ def plot_test_sample(test_sample):
     plt.show()
 
 
-def plot_nn_segmentation(pred_mask):
+def plot_nn_segmentation(pred_mask, class_label):
     plt.figure(figsize=(10, 10))
-    print(pred_mask.max())
-    print(pred_mask.min())
     im = plt.imshow(pred_mask, cmap='gray')
-    plt.title('NN Segmentation')
+    plt.title('NN Segmentation for {}({})'.format(LABELS[class_label],class_label))
     plt.show()
 
 
@@ -335,6 +332,28 @@ def plot_ransac_results(img, obj_keypoints_xy, ransac_results):
     plt.scatter(obj_keypoints_xy[:, 0], obj_keypoints_xy[:, 1], marker='v', color="orange", linewidths=5)
     plt.scatter(found_keypoints[:, 0], found_keypoints[:, 1], marker='x', color="blue")
     plt.title('RANSAC Keypoint Voting')
+
+def plot_multiclass_mask(class_segmentation, gt_class_label, num_classes = 13):
+    classviz = torch.max(class_segmentation, dim=0)[1]
+    
+    # Normalize to always show from 0 -> num_classes patches
+    cm = matplotlib.cm.get_cmap('tab20', num_classes + 1)
+    norm = mcolors.Normalize(vmin=0,vmax = num_classes)
+    im = plt.imshow(classviz.to('cpu'),norm=norm, cmap = cm, interpolation='none')
+    
+    # Create color patches for legend
+    colors = [im.cmap(value) for value in range(0,14)]
+    patches = [ mpatches.Patch(color=colors[i], 
+        label="{l}-{i}: {numpix} pixels".format(l=(LABELS[i] if i in LABELS else "Null"),
+            i=i,
+            numpix=classviz[classviz==i].nonzero().size(0))) 
+        for i in range(0,14) ]
+    # put those patched as legend-handles into the legend
+    plt.legend(handles=patches, bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0. )
+
+    plt.title('NN Multi-Class Segmentation (GT Class: {}({}))'.format(LABELS[gt_class_label],gt_class_label))
+    plt.grid(True)
+    plt.show()
 
 
 def make_prediction(pvnet, test_sample, num_keypoints, root_dir = None, device='cpu'):
@@ -359,35 +378,14 @@ def make_prediction(pvnet, test_sample, num_keypoints, root_dir = None, device='
     pred = pvnet(test_image)
     pred_class = pred['class']
     pred_vectors = pred['vector']
-    print(pred_vectors.size())
-    print(pred_class.size())
+ 
+    plot_nn_segmentation(pred_mask = pred_class[0, test_class, :, :].detach().to('cpu').numpy(),
+      class_label = test_class)
 
-    plot_nn_segmentation(pred_class[0, test_class, :, :].detach().to('cpu').numpy())
-
-    classviz = torch.max(pred_class[0], dim=0)[1]
-    for k in range(0,14):
-      print("Of class {}, {}".format(k,classviz[classviz==k].nonzero().size(0)))
-    class_im = T.ToPILImage()(classviz.type(torch.FloatTensor))
-
-    
-
-    im = plt.imshow(class_im,cmap='tab20')#,vmin=0,vmax=19)
-    colors = [im.cmap(value) for value in range(0,20)]
-    print(colors)
-    # create a patch (proxy artist) for every color 
-    patches = [ mpatches.Patch(color=colors[i], label="{l}".format(l=i) ) for i in range(0,20) ]
-    # put those patched as legend-handles into the legend
-    plt.legend(handles=patches, bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0. )
-
-    plt.grid(True)
-    plt.show()
-
+    plot_multiclass_mask(pred_class[0], test_class, num_classes = 13)
 
     # Load the 3D points for the class
     points3d = get_3d_points(test_class_str, root_dir)
-
-    print(test_sample['class_label'])
-    print(pred_class[0,test_sample['class_label']].max())
 
     # Segmentation mask and unit vectors to 2D points using RANSAC
     ransac_results = find_keypoints_with_ransac(pred_vectors[0].to('cpu'), test_sample['class_label'].to('cpu'),

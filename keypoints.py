@@ -34,8 +34,6 @@ def findKeypoints(segmentationMap: torch.Tensor,
         # topk(1) returns (max_value, idx_of_channel_with_max_value) 
         # [C,H,W] => ([1,H,W], [1,H,W])
         _ , singleClassMap = torch.max(segmentationMap[bi], dim=0)
-        print(singleClassMap.size())
-        print(torch.unique(singleClassMap))
 
         # [H,W,num_class*num_keypoint*2]
         singleKeyVectorMap = keypointVectorMap[bi]
@@ -47,7 +45,7 @@ def findKeypoints(segmentationMap: torch.Tensor,
             # [pixels_in_class,y,x]
             inClass = in_class_mask.nonzero() 
             inClassCt = inClass.size(0)
-            print("Pixesl in class {}: {}".format(c,inClassCt))
+            print("Pixels in class {}: {}".format(c,inClassCt))
 
             # Skip if no class in segment
             if inClassCt == 0:
