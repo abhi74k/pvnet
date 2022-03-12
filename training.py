@@ -44,8 +44,14 @@ def train(epochs,
     num_trainloader = len(train_data_loader)
 
     # Losses
+    weights = torch.ones(model.num_classes+1)
+    
+    # Weight null class at 0.1 of actual classes
+    weights[-1] = 0.1
+
     class_loss_func = nn.CrossEntropyLoss(
-      ignore_index = model.num_classes    #optional -- ignore "null" class when training 
+      weight = weights,                     #optional -- downweight"null" class when training
+      # ignore_index = model.num_classes    #optional -- ignore "null" class when training 
     ).to(device)
     vector_loss_func = nn.SmoothL1Loss(reduction='sum').to(device)
 
