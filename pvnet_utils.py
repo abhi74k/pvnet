@@ -309,7 +309,7 @@ def plot_test_sample(test_sample, class_list):
     keypoints = test_sample['obj_keypoints']
     key_x, key_y = zip(*(keypoints.tolist()))
 
-    keypoint_vectors = test_sample['class_vectormap'].transpose(2, 0, 1)
+    keypoint_vectors = test_sample['class_vectormap'].permute(2, 0, 1)
 
     fig, axs = plt.subplots(1, 2, figsize=(10, 40 / 3))
     fig.tight_layout()
@@ -405,6 +405,7 @@ def make_prediction(pvnet, test_sample,
                     ransac_hypotheses = 128,
                     ransac_iterations = 10):
     device = torch.device("cuda:0" if device == "cuda" else "cpu")
+    pvnet.to(device)
 
     test_class = int(test_sample['class_label'])
     test_class_str = class_list[int(test_sample['class_label'])]
@@ -416,7 +417,7 @@ def make_prediction(pvnet, test_sample,
 
 
     # For each pixel, a vector to each keypoint for each class
-    class_vector_map = torch.Tensor(test_sample['class_vectormap']).to(device)  # [480, 640, k*2*c]
+    class_vector_map = test_sample['class_vectormap'].to(device)  # [480, 640, k*2*c]
 
 
     # Image to tensor
@@ -427,8 +428,7 @@ def make_prediction(pvnet, test_sample,
     pred = pvnet(test_image)
     pred_class = pred['class']
     pred_vectors = pred['vector']
- 
-    print(pred_class.size())
+
 
     plot_nn_segmentation(pred_mask = pred_class[0, test_class, :, :].detach().to('cpu').numpy(),
       class_label = test_class,
