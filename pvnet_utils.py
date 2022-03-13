@@ -3,6 +3,7 @@ import os
 from importlib import reload
 
 import cv2
+import numpy
 import numpy as np
 from sklearn.model_selection import train_test_split
 import torch
@@ -39,7 +40,6 @@ LABELS = {
     12: 'phone'
 }
 
-
 H = 480
 W = 640
 
@@ -54,6 +54,7 @@ kinect_camera_matrix = np.array([
 
 tensorToPIL = T.ToPILImage()
 
+
 def get_all_labels():
     return list(LABELS.values())
 
@@ -64,6 +65,11 @@ def get_numeric_label(label_str):
             return k
 
     return -1  # not found
+
+
+def read_pose_file(pose_file_location):
+    pose = numpy.load(pose_file_location)
+    return pose
 
 
 def get_files_for_labels(root_dir, labels, shuffle=False):
@@ -79,7 +85,8 @@ def get_files_for_labels(root_dir, labels, shuffle=False):
         keypoints_list = sorted(os.listdir(keypoints_path))
         pose_list = [pose_path + 'pose' + str(pose_i) + ".npy" for pose_i in range(len(images_list))]
 
-        l = [(images_path + image, masks_path + mask, keypoints_path + keypoints, pose, label) for image, mask, keypoints, pose in
+        l = [(images_path + image, masks_path + mask, keypoints_path + keypoints, pose, label) for
+             image, mask, keypoints, pose in
              zip(images_list, masks_list, keypoints_list, pose_list)]
         random.shuffle(l)
         results.extend(l)
@@ -147,8 +154,8 @@ def compute_keypoint_vector_pred_error(unit_vectors_preds, unit_vectors_gt, smoo
 
     # Average only over true pixels in class mask
     # L1 loss function reduces as a sum of all losses. Then divide by # points in class
-    loss = smooth_l1_loss_func((unit_vectors_preds*expanded_seg).reshape(-1), 
-                                  (expanded_seg*unit_vectors_gt).reshape(-1))/expanded_seg.sum()
+    loss = smooth_l1_loss_func((unit_vectors_preds * expanded_seg).reshape(-1),
+                               (expanded_seg * unit_vectors_gt).reshape(-1)) / expanded_seg.sum()
     return loss
 
 
@@ -173,7 +180,7 @@ def compute_img_segmentation_pred_error(class_preds, class_mask_gt, class_label_
 def calculate_accuracy(class_preds, class_mask_gt, class_label_gt, num_classes):
     # Save null-class pixels
     null_pixels = class_mask_gt == 0
-    
+
     # Convert 1D tensor of labels to (N, H, W)
     img_classes_gt = class_mask_gt * torch.reshape(class_label_gt, (-1, 1, 1))
 
@@ -232,14 +239,14 @@ def solve_pnp(points3d, points2d, method=cv.SOLVEPNP_ITERATIVE):
     return rvec, R, t
 
 
-def get_3d_points(class_label='cat', root_dir = ROOT_DIR):
+def get_3d_points(class_label='cat', root_dir=ROOT_DIR):
     points_path = f'{root_dir}/{class_label}/corners.txt'
     print(f'3D points path:{points_path}')
     data = pd.read_csv(points_path, header=None, delimiter=' ')
     return data.to_numpy()
 
 
-def create_model_and_load_weights(model_weights_path, 
+def create_model_and_load_weights(model_weights_path,
                                   device='infer',
                                   num_classes=13,
                                   num_keypoints=9,
@@ -268,19 +275,20 @@ def create_model_and_load_weights(model_weights_path,
 
 
 def find_keypoints_with_ransac(class_vector_map,
-                                test_class, 
-                                test_class_mask, 
-                                num_keypoints,
-                                ransac_hypotheses,
-                                ransac_iterations):
+                               test_class,
+                               test_class_mask,
+                               num_keypoints,
+                               ransac_hypotheses,
+                               ransac_iterations):
     keypointVector = class_vector_map.unsqueeze(0).detach()  # [1, k*2*c,h, w]
 
     padded_segmentation = test_class_mask.unsqueeze(0)
 
     b, c, h, w = keypointVector.size()
     x, y = np.meshgrid(np.linspace(0, w - 1, 50), np.linspace(0, h - 1, 50))
-    
-    u, v = keypointVector[0, test_class * num_keypoints * 2:test_class * num_keypoints * 2 + 2, y, x]*test_class_mask.detach()[test_class:test_class+1, y, x]
+
+    u, v = keypointVector[0, test_class * num_keypoints * 2:test_class * num_keypoints * 2 + 2, y,
+           x] * test_class_mask.detach()[test_class:test_class + 1, y, x]
     v = -v
 
     found_keypoints, inClass, hypotheses, vote_cts, vectorPtsInClass = keypoints.findKeypoints(
@@ -335,7 +343,7 @@ def plot_test_sample(test_sample, class_list):
 def plot_nn_segmentation(pred_mask, class_label, class_name):
     plt.figure(figsize=(10, 10))
     im = plt.imshow(pred_mask, cmap='gray')
-    plt.title('NN Segmentation for {}({})'.format(class_name,class_label))
+    plt.title('NN Segmentation for {}({})'.format(class_name, class_label))
     plt.show()
 
 
@@ -349,33 +357,35 @@ def plot_ransac_results(img, obj_keypoints_xy, ransac_results):
     plt.quiver(x, y, u, v, color='red', scale=10, scale_units='inches', headwidth=6, headlength=6)
     plt.scatter(obj_keypoints_xy[:, 0], obj_keypoints_xy[:, 1], marker='v', color="orange", linewidths=5)
     plt.scatter(found_keypoints[:, 0], found_keypoints[:, 1], marker='x', color="blue")
-    plt.xlim([0,img.size(2)])
-    plt.ylim([img.size(1),0])
+    plt.xlim([0, img.size(2)])
+    plt.ylim([img.size(1), 0])
 
     plt.title('RANSAC Keypoint Voting')
+
 
 def plot_multiclass_mask(class_segmentation, gt_class_label, class_list):
     classviz = torch.max(class_segmentation, dim=0)[1]
 
     gt_class_name = class_list[gt_class_label]
     num_classes = len(class_list)
-    
+
     # Normalize to always show from 0 -> num_classes patches
     cm = matplotlib.cm.get_cmap('tab20', num_classes + 1)
-    norm = mcolors.Normalize(vmin=0,vmax = num_classes)
-    im = plt.imshow(classviz.to('cpu'),norm=norm, cmap = cm, interpolation='none')
-    
-    # Create color patches for legend
-    colors = [im.cmap(value) for value in range(0,num_classes+1)]
-    patches = [ mpatches.Patch(color=colors[i], 
-        label="{l}-{i}: {numpix} pixels".format(l=(class_list[i] if i < len(class_list) else "Null"),
-            i=i,
-            numpix=(classviz == i).nonzero().size(0))) 
-        for i in range(0,num_classes+1) ]
-    # put those patched as legend-handles into the legend
-    plt.legend(handles=patches, bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0. )
+    norm = mcolors.Normalize(vmin=0, vmax=num_classes)
+    im = plt.imshow(classviz.to('cpu'), norm=norm, cmap=cm, interpolation='none')
 
-    plt.title('NN Multi-Class Segmentation (GT Class: {}({}))'.format(gt_class_name,gt_class_label))
+    # Create color patches for legend
+    colors = [im.cmap(value) for value in range(0, num_classes + 1)]
+    patches = [mpatches.Patch(color=colors[i],
+                              label="{l}-{i}: {numpix} pixels".format(
+                                  l=(class_list[i] if i < len(class_list) else "Null"),
+                                  i=i,
+                                  numpix=(classviz == i).nonzero().size(0)))
+               for i in range(0, num_classes + 1)]
+    # put those patched as legend-handles into the legend
+    plt.legend(handles=patches, bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0.)
+
+    plt.title('NN Multi-Class Segmentation (GT Class: {}({}))'.format(gt_class_name, gt_class_label))
     plt.grid(True)
     plt.show()
 
@@ -388,8 +398,9 @@ points3d: Nx3 dim
 Returns:
 pixel_coords: Nx2 dim
 '''
-def project3d_to_2d(K, R, t, points3d):
 
+
+def project3d_to_2d(K, R, t, points3d):
     camera_coords = (R @ points3d.T) + t.reshape(-1, 1)
     homogenous_image_coords = K @ camera_coords
     pixel_coords = homogenous_image_coords[0:2, :] / homogenous_image_coords[2, :]
@@ -397,13 +408,15 @@ def project3d_to_2d(K, R, t, points3d):
 
     return pixel_coords
 
+
 def make_prediction(pvnet, test_sample,
-                    num_keypoints, 
-                    class_list, 
-                    root_dir = None, 
+                    num_keypoints,
+                    class_list,
+                    root_dir=None,
                     device='cpu',
-                    ransac_hypotheses = 128,
-                    ransac_iterations = 10):
+                    ransac_hypotheses=128,
+                    ransac_iterations=10,
+                    genplots=True):
     device = torch.device("cuda:0" if device == "cuda" else "cpu")
     pvnet.to(device)
 
@@ -413,12 +426,11 @@ def make_prediction(pvnet, test_sample,
     test_class_mask = test_sample['class_mask'].to(device)
     obj_keypoints_xy = test_sample['obj_keypoints_xy']
 
-    plot_test_sample(test_sample, class_list)
-
+    if genplots:
+        plot_test_sample(test_sample, class_list)
 
     # For each pixel, a vector to each keypoint for each class
     class_vector_map = test_sample['class_vectormap'].to(device)  # [480, 640, k*2*c]
-
 
     # Image to tensor
     Img2Tensor = T.ToTensor()
@@ -429,12 +441,12 @@ def make_prediction(pvnet, test_sample,
     pred_class = pred['class']
     pred_vectors = pred['vector']
 
+    if genplots:
+        plot_nn_segmentation(pred_mask=pred_class[0, test_class, :, :].detach().to('cpu').numpy(),
+                             class_label=test_class,
+                             class_name=class_list[test_class])
 
-    plot_nn_segmentation(pred_mask = pred_class[0, test_class, :, :].detach().to('cpu').numpy(),
-      class_label = test_class,
-      class_name = class_list[test_class])
-
-    plot_multiclass_mask(pred_class[0], test_class, class_list = class_list)
+        plot_multiclass_mask(pred_class[0], test_class, class_list=class_list)
 
     # Load the 3D points for the class
     points3d = get_3d_points(test_class_str, root_dir)
@@ -443,22 +455,29 @@ def make_prediction(pvnet, test_sample,
 
     ransac_results = find_keypoints_with_ransac(pred_vectors[0].to('cpu'),
                                                 test_sample['class_label'].to('cpu'),
-                                                pred_class[0].to('cpu'), 
+                                                pred_class[0].to('cpu'),
                                                 num_keypoints,
                                                 ransac_hypotheses,
                                                 ransac_iterations)
     plot_ransac_results(test_sample['img'].to('cpu'), obj_keypoints_xy, ransac_results)
 
+    points2d = ransac_results['found_keypoints'][1:9, :].detach().numpy()  # skip 1st point which is the centroid
 
-    points2d = ransac_results['found_keypoints'][1:9, :].detach().numpy() #skip 1st point which is the centroid
-    print(points2d)
+    if genplots:
+        print(points2d)
 
     # PnP to compute R, t from
     rVec, R, t = solve_pnp(points3d, points2d)
 
     # Predict image points
-    image_points_pred = cv2.projectPoints(points3d, rVec, t,
-                                          kinect_camera_matrix,
-                                          np.zeros(shape=[8, 1], dtype='float64'))[0].squeeze()
+    if genplots:
+        image_points_pred = cv2.projectPoints(points3d, rVec, t,
+                                              kinect_camera_matrix,
+                                              np.zeros(shape=[8, 1], dtype='float64'))[0].squeeze()
 
-    draw_utils.visualize_pose(test_sample, image_points_pred)
+        draw_utils.visualize_pose(test_sample, image_points_pred)
+
+    pose = np.zeros((3, 4))
+    pose[0:3, 0:3] = R[0]
+    pose[0:3, 3] = t.reshape(-1)
+    return pose

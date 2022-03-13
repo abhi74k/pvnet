@@ -74,7 +74,8 @@ class LineModReader(Dataset):
             'class_label': torch.tensor(class_idx).long(),
             'obj_keypoints_xy': keypoint_xy_coords,
             'obj_keypoints': keypoint_coords,
-            'pose_path': pose_path
+            'pose_path': pose_path,
+            'orig_class_label': self.labels[index]
         }
 
         # Apply transforms if provided
