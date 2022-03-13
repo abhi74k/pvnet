@@ -1,5 +1,7 @@
 import numpy as np
 from PIL import Image
+
+import metrics_utils
 import models
 import pvnet_utils
 import data
@@ -14,6 +16,7 @@ from pvnet_utils import get_files_for_labels, ROOT_DIR, parse_labels_file, H, W,
 from pvnet_utils import get_test_train_split, get_all_labels
 from pvnet_utils import NUM_TRAINING_CLASSES, NUM_KEY_POINTS
 
+
 def run_compute_unit_vectors():
     cat_dataset = get_files_for_labels(ROOT_DIR, ['cat'])
     img_path, mask_path, keypoints_path, classname = cat_dataset[0]
@@ -26,7 +29,8 @@ def run_compute_unit_vectors():
     img_with_unit_vectors = np.zeros((H, W, NUM_TRAINING_CLASSES * NUM_KEY_POINTS * 2))
     class_relative_offset = int(class_label) * NUM_KEY_POINTS
 
-    compute_unit_vectors(class_offset = class_relative_offset, img_mask_coords=img_mask_coords, keypoints_coords=keypoint_coords,
+    compute_unit_vectors(class_offset=class_relative_offset, img_mask_coords=img_mask_coords,
+                         keypoints_coords=keypoint_coords,
                          img_with_unit_vectors=img_with_unit_vectors)
 
 
@@ -41,7 +45,6 @@ def run_test_train_split():
 
 
 def run_prediction():
-
     NUM_KEYPOINTS = 2
 
     X_train, X_test, y_train, y_test = pvnet_utils.get_test_train_split(ROOT_DIR, ['duck', 'cat', 'lamp'],
@@ -51,7 +54,7 @@ def run_prediction():
 
     test_dataset_reader = data.LineModReader((X_test, y_test), num_keypoints=NUM_KEYPOINTS)
     pvnet = pvnet_utils.create_model_and_load_weights('checkpoints/ckpt_0.pth', device='cpu')
-    pvnet_utils.make_prediction(pvnet, test_dataset_reader[0], NUM_KEYPOINTS, root_dir = ROOT_DIR)
+    pvnet_utils.make_prediction(pvnet, test_dataset_reader[0], NUM_KEYPOINTS, root_dir=ROOT_DIR)
 
 
 def check_pnp():
@@ -79,9 +82,17 @@ def check_pnp():
 
     draw_utils.visualize_pose(test_dataset_reader[0], image_points_pred)
 
-if __name__ == '__main__':
 
-    #run_test_train_split()
-    #run_compute_unit_vectors()
-    #run_prediction()
-    check_pnp()
+def compute_add_metric():
+    X_train, X_test, y_train, y_test = get_test_train_split(ROOT_DIR, ['cat'])
+    test_dataset_reader = data.LineModReader((X_test, y_test), ["cat"], num_keypoints=pvnet_utils.NUM_KEY_POINTS)
+    metrics_utils.compute_add_metric_for_label(test_dataset_reader,
+                                                 "checkpoints/ckpt_9_0312_catonly.pth",
+                                                 "cat")
+
+if __name__ == '__main__':
+    # run_test_train_split()
+    # run_compute_unit_vectors()
+    # run_prediction()
+    # check_pnp()
+    compute_add_metric()
