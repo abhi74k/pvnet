@@ -83,16 +83,17 @@ def check_pnp():
     draw_utils.visualize_pose(test_dataset_reader[0], image_points_pred)
 
 
-def compute_add_metric():
+def compute_error_metrics():
     X_train, X_test, y_train, y_test = get_test_train_split(ROOT_DIR, ['cat'])
     test_dataset_reader = data.LineModReader((X_test, y_test), ["cat"], num_keypoints=pvnet_utils.NUM_KEY_POINTS)
-    metrics_utils.compute_add_metric_for_label(test_dataset_reader,
-                                                 "checkpoints/ckpt_9_0312_catonly.pth",
-                                                 "cat")
+    metrics_utils.compute_error_metrics_for_dataset(test_dataset_reader,
+                                                    "checkpoints/ckpt_9_0312_catonly.pth",
+                                                    "cat",
+                                                    ROOT_DIR)
 
 if __name__ == '__main__':
     # run_test_train_split()
     # run_compute_unit_vectors()
     # run_prediction()
     # check_pnp()
-    compute_add_metric()
+    compute_error_metrics()
