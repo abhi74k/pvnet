@@ -10,22 +10,17 @@ from math import cos, sin, radians
 from pvnet_utils import NUM_CLASSES, NUM_KEY_POINTS, LABELS
 
 
-
-
-
-
-
 class LineModReader(Dataset):
 
     def __init__(self,
-                  dataset, 
-                  class_list, 
-                  augmentation=False,
-                  num_keypoints=NUM_KEY_POINTS):
+                 dataset,
+                 class_list,
+                 augmentation=False,
+                 num_keypoints=NUM_KEY_POINTS):
         self.train_files = dataset[0]
         self.labels = dataset[1]
         self.num_keypoints = num_keypoints
-        
+
         self.class_list = class_list
         self.num_classes = len(class_list)
 
@@ -37,6 +32,10 @@ class LineModReader(Dataset):
         self.tensorToImage = T.ToPILImage()
 
         self.augmentation = augmentation
+
+        self.img_transforms = pvnet_utils.img_transforms
+
+        self.inv_img_transforms = pvnet_utils.inverse_img_transforms
 
     def __len__(self):
         return self.dataset_size
@@ -63,14 +62,14 @@ class LineModReader(Dataset):
         # Augument each pixel where the image is present with a unit vector pointing to each of the keypoints
         rgb_img = Image.open(img_path)
         img_with_unit_vectors = np.zeros((pvnet_utils.H, pvnet_utils.W, self.num_classes * self.num_keypoints * 2))
-        class_relative_offset = class_idx * self.num_keypoints *2
+        class_relative_offset = class_idx * self.num_keypoints * 2
         pvnet_utils.compute_unit_vectors(class_relative_offset, img_mask_coords=img_mask_coords,
                                          keypoints_coords=keypoint_coords, img_with_unit_vectors=img_with_unit_vectors)
 
         sample = {
-            'img': self.imageToTensor(rgb_img),   #[3,h,w]
-            'class_mask': torch.tensor(img_mask).type(torch.LongTensor),  #[h,w]
-            'class_vectormap': torch.tensor(img_with_unit_vectors).type(torch.FloatTensor), #[h,w,num_c*num_k*2]
+            'img': self.img_transforms(rgb_img),  # [3,h,w]
+            'class_mask': torch.tensor(img_mask).type(torch.LongTensor),  # [h,w]
+            'class_vectormap': torch.tensor(img_with_unit_vectors).type(torch.FloatTensor),  # [h,w,num_c*num_k*2]
             'class_label': torch.tensor(class_idx).long(),
             'obj_keypoints_xy': keypoint_xy_coords,
             'obj_keypoints': keypoint_coords,
@@ -80,56 +79,55 @@ class LineModReader(Dataset):
 
         # Apply transforms if provided
         if self.augmentation:
-          self.applyTransforms(sample)
+            self.applyTransforms(sample)
 
         return sample
-    
+
     """
     Regular random transforms can't be applied to each label, because random
     values will differ and be misaligned. We need to stack them into
     one tensor, apply transforms at once, and then unpack tensor.
     
     """
+
     def applyTransforms(self, sample):
-      C,H,W = sample['img'].size()
+        C, H, W = sample['img'].size()
 
-      # Apply color jitter only to rgb image
-      sample['img'] = T.ColorJitter()(sample['img'])
+        # Apply color jitter only to rgb image
+        sample['img'] = T.ColorJitter()(sample['img'])
 
-      # Reshape and join into one multi-channel tensor
-      stacked = torch.cat((sample['img'],                       #[3,H,W]
-                            sample['class_mask'].unsqueeze(0),  #[H,W]=>[1,H,W]
-                            sample['class_vectormap'].permute(2,0,1)  #[H,W,C]=>[C,H,W]
-                            ), dim = 0)
+        # Reshape and join into one multi-channel tensor
+        stacked = torch.cat((sample['img'],  # [3,H,W]
+                             sample['class_mask'].unsqueeze(0),  # [H,W]=>[1,H,W]
+                             sample['class_vectormap'].permute(2, 0, 1)  # [H,W,C]=>[C,H,W]
+                             ), dim=0)
 
-      
-      # Transforms applied to all matrices equally (only RandomResizedCrop for now)
-      joint_transforms = T.Compose([T.RandomResizedCrop((H,W))])
-      stacked = joint_transforms(stacked)
+        # Transforms applied to all matrices equally (only RandomResizedCrop for now)
+        joint_transforms = T.Compose([T.RandomResizedCrop((H, W))])
+        stacked = joint_transforms(stacked)
 
-      # Apply rotation. Need to save angle to 
-      angle = float(torch.empty(1).uniform_(0, 360).item())
-      rads = radians(angle)
+        # Apply rotation. Need to save angle to
+        angle = float(torch.empty(1).uniform_(0, 360).item())
+        rads = radians(angle)
 
-      # Transform between uv and xy before applying rotation
-      uv_to_xy = torch.Tensor([1,0,0,-1]).reshape(2,2)
-      R = torch.Tensor([[cos(rads), -sin(rads)]
-                        ,[sin(rads), cos(rads)]]).type(torch.FloatTensor)
+        # Transform between uv and xy before applying rotation
+        uv_to_xy = torch.Tensor([1, 0, 0, -1]).reshape(2, 2)
+        R = torch.Tensor([[cos(rads), -sin(rads)]
+                             , [sin(rads), cos(rads)]]).type(torch.FloatTensor)
 
-      stacked = T.functional.rotate(stacked, angle, fill=0)
+        stacked = T.functional.rotate(stacked, angle, fill=0)
 
-      # Unpack original labels
-      sample['img'] = stacked[0:3]
-      sample['class_mask'] = stacked[3].type(torch.LongTensor)
+        # Unpack original labels
+        sample['img'] = stacked[0:3]
+        sample['class_mask'] = stacked[3].type(torch.LongTensor)
 
-      # Rotate vector values
-      vector_temp = stacked[4:].permute(1,2,0)
-      H, W, C = vector_temp.size()
-      vector_temp = vector_temp.reshape(H,W,round(C/2),2) #[H,W,numpts,(xy)]
-      vector_temp = vector_temp.permute(0,1,3,2) #[H,W,(xy),numpts]
-      vector_temp = uv_to_xy @ R @ uv_to_xy @ vector_temp.type(torch.FloatTensor)
-      sample['class_vectormap'] = vector_temp.permute(0,1,3,2).reshape(H,W,C)
-
+        # Rotate vector values
+        vector_temp = stacked[4:].permute(1, 2, 0)
+        H, W, C = vector_temp.size()
+        vector_temp = vector_temp.reshape(H, W, round(C / 2), 2)  # [H,W,numpts,(xy)]
+        vector_temp = vector_temp.permute(0, 1, 3, 2)  # [H,W,(xy),numpts]
+        vector_temp = uv_to_xy @ R @ uv_to_xy @ vector_temp.type(torch.FloatTensor)
+        sample['class_vectormap'] = vector_temp.permute(0, 1, 3, 2).reshape(H, W, C)
 
     def show_batch(self, n=3):
         height = 10.0 * n / 3
@@ -146,7 +144,7 @@ class LineModReader(Dataset):
             keypoint_vectors = sample['class_vectormap'].permute(2, 0, 1)
 
             key_x, key_y = zip(*(keypoints.tolist()))
-            axs[i, 0].imshow(self.tensorToImage(img))
+            axs[i, 0].imshow(self.inv_img_transforms(img))
             axs[i, 0].scatter(key_x[0:8], key_y[0:8], marker='v', color="red")
 
             # viz vector field arrows for centroid keypoint
