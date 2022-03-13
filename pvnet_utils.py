@@ -10,6 +10,7 @@ import torch
 import cv2 as cv
 import pandas as pd
 import keypoints
+import metrics_utils
 import models
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
@@ -409,7 +410,8 @@ def project3d_to_2d(K, R, t, points3d):
     return pixel_coords
 
 
-def make_prediction(pvnet, test_sample,
+def make_prediction(pvnet,
+                    test_sample,
                     num_keypoints,
                     class_list,
                     root_dir=None,
@@ -477,7 +479,15 @@ def make_prediction(pvnet, test_sample,
 
         draw_utils.visualize_pose(test_sample, image_points_pred)
 
-    pose = np.zeros((3, 4))
-    pose[0:3, 0:3] = R[0]
-    pose[0:3, 3] = t.reshape(-1)
-    return pose
+    predicted_pose = np.zeros((3, 4))
+    predicted_pose[0:3, 0:3] = R[0]
+    predicted_pose[0:3, 3] = t.reshape(-1)
+
+    points3d = get_3d_points(test_class_str, root_dir=root_dir)
+    gt_pose = read_pose_file(test_sample['pose_path'])
+    add_error, projection2d_error = metrics_utils.compute_error_metrics(predicted_pose, gt_pose, points3d, test_class_str)
+
+    if genplots:
+        print(f'ADD error:{add_error}, Projection 2D error: {projection2d_error}')
+
+    return predicted_pose, add_error, projection2d_error
