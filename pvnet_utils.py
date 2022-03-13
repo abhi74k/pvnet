@@ -53,7 +53,22 @@ kinect_camera_matrix = np.array([
     [0., 573.57043, 242.04899],
     [0., 0., 1.]])
 
-tensorToPIL = T.ToPILImage()
+normalize_img = T.Normalize(mean=[0.485, 0.456, 0.406],
+                            std=[0.229, 0.224, 0.225])
+
+denormalize_img = T.Normalize(mean=[-0.485 / 0.229, -0.456 / 0.224, -0.406 / 0.225],
+                              std=[1 / 0.229, 1 / 0.224, 1 / 0.225])
+
+img_transforms = T.Compose([
+            T.ToTensor(),  # if image.dtype is np.uint8, then it will be divided by 255
+            normalize_img
+        ])
+
+
+inverse_img_transforms = T.Compose([
+            denormalize_img,
+            T.ToPILImage()
+        ])
 
 
 def get_all_labels():
@@ -324,7 +339,7 @@ def plot_test_sample(test_sample, class_list):
     fig.tight_layout()
 
     # Test image
-    axs[0].imshow(tensorToPIL(img))
+    axs[0].imshow(inverse_img_transforms(img))
     axs[0].scatter(key_x[0:8], key_y[0:8], marker='v', color="red")
 
     c, h, w = img.size()
@@ -354,7 +369,7 @@ def plot_ransac_results(img, obj_keypoints_xy, ransac_results):
     found_keypoints = ransac_results['found_keypoints']
 
     plt.figure(figsize=(10, 10))
-    plt.imshow(tensorToPIL(img))
+    plt.imshow(inverse_img_transforms(img))
     plt.quiver(x, y, u, v, color='red', scale=10, scale_units='inches', headwidth=6, headlength=6)
     plt.scatter(obj_keypoints_xy[:, 0], obj_keypoints_xy[:, 1], marker='v', color="orange", linewidths=5)
     plt.scatter(found_keypoints[:, 0], found_keypoints[:, 1], marker='x', color="blue")
@@ -424,7 +439,7 @@ def make_prediction(pvnet,
 
     test_class = int(test_sample['class_label'])
     test_class_str = class_list[int(test_sample['class_label'])]
-    test_image = tensorToPIL(test_sample['img'])
+    test_image = inverse_img_transforms(test_sample['img'])
     test_class_mask = test_sample['class_mask'].to(device)
     obj_keypoints_xy = test_sample['obj_keypoints_xy']
 
@@ -435,8 +450,7 @@ def make_prediction(pvnet,
     class_vector_map = test_sample['class_vectormap'].to(device)  # [480, 640, k*2*c]
 
     # Image to tensor
-    Img2Tensor = T.ToTensor()
-    test_image = torch.unsqueeze(Img2Tensor(test_image), 0).to(device)
+    test_image = torch.unsqueeze(img_transforms(test_image), 0).to(device)
 
     # Make a prediction
     pred = pvnet(test_image)

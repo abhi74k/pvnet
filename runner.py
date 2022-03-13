@@ -45,16 +45,16 @@ def run_test_train_split():
 
 
 def run_prediction():
-    NUM_KEYPOINTS = 2
+    NUM_KEYPOINTS = 9
 
     X_train, X_test, y_train, y_test = pvnet_utils.get_test_train_split(ROOT_DIR, ['duck', 'cat', 'lamp'],
                                                                         test_size=0.33,
                                                                         random_state=2,
                                                                         shuffle=True)
 
-    test_dataset_reader = data.LineModReader((X_test, y_test), num_keypoints=NUM_KEYPOINTS)
+    test_dataset_reader = data.LineModReader((X_test, y_test), ['duck', 'cat', 'lamp'], num_keypoints=NUM_KEYPOINTS)
     pvnet = pvnet_utils.create_model_and_load_weights('checkpoints/ckpt_0.pth', device='cpu')
-    pvnet_utils.make_prediction(pvnet, test_dataset_reader[0], NUM_KEYPOINTS, root_dir=ROOT_DIR)
+    pvnet_utils.make_prediction(pvnet, test_dataset_reader[0], NUM_KEYPOINTS, ['duck', 'cat', 'lamp'], root_dir=ROOT_DIR)
 
 
 def check_pnp():
@@ -94,6 +94,6 @@ def compute_error_metrics():
 if __name__ == '__main__':
     # run_test_train_split()
     # run_compute_unit_vectors()
-    # run_prediction()
+     run_prediction()
     # check_pnp()
-    compute_error_metrics()
+    #compute_error_metrics()
