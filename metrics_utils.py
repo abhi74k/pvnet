@@ -52,6 +52,6 @@ def compute_add_metric_for_label(test_dataset_reader,
         if label in ['eggbox', 'glue']:
             add_metric_lst.append(compute_add_s_metric(pred_pose, gt_pose, points3d))
         else:
-            add_metric_lst.append(compute_add_s_metric(pred_pose, gt_pose, points3d))
+            add_metric_lst.append(compute_add_metric(pred_pose, gt_pose, points3d))
 
     print(f'Avg ADD metric: {np.mean(add_metric_lst)}')
