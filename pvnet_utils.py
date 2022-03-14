@@ -303,8 +303,11 @@ def find_keypoints_with_ransac(class_vector_map,
     b, c, h, w = keypointVector.size()
     x, y = np.meshgrid(np.linspace(0, w - 1, 50), np.linspace(0, h - 1, 50))
 
+    # Get max clss for pixel, only show u,v for pixels where test_class is most likely class
+    _,singleClassMask = torch.max(test_class_mask, dim=0)
+    singleClassMask = (singleClassMask==test_class).unsqueeze(0)
     u, v = keypointVector[0, test_class * num_keypoints * 2:test_class * num_keypoints * 2 + 2, y,
-           x] * test_class_mask.detach()[test_class:test_class + 1, y, x]
+           x] * singleClassMask.detach()[0:1, y, x]
     v = -v
 
     found_keypoints, inClass, hypotheses, vote_cts, vectorPtsInClass = keypoints.findKeypoints(
@@ -323,28 +326,36 @@ def find_keypoints_with_ransac(class_vector_map,
     }
 
 
-def plot_test_sample(test_sample, class_list):
+def plot_test_sample(test_sample, class_list, augmented = True):
     img = test_sample['img']
     mask = test_sample['class_mask']
+    if(augmented):
+      pltimg = inverse_img_transforms(img)
+    else:
+      pltimg = T.ToPILImage()(img)
 
     clazz = int(test_sample['class_label'])
     clazz_str = class_list[int(test_sample['class_label'])]
 
-    keypoints = test_sample['obj_keypoints']
+    keypoints = test_sample['obj_keypoints_xy']
+    print(keypoints.shape)
     key_x, key_y = zip(*(keypoints.tolist()))
 
     keypoint_vectors = test_sample['class_vectormap'].permute(2, 0, 1)
+    print(keypoint_vectors.size())
+    fig = plt.imshow(pltimg)
 
     fig, axs = plt.subplots(1, 2, figsize=(10, 40 / 3))
     fig.tight_layout()
 
     # Test image
-    axs[0].imshow(inverse_img_transforms(img))
+    axs[0].imshow(pltimg)
     axs[0].scatter(key_x[0:8], key_y[0:8], marker='v', color="red")
+
 
     c, h, w = img.size()
     x, y = np.meshgrid(np.linspace(0, w - 1, 50, dtype='int'), np.linspace(0, h - 1, 50, dtype='int'))
-    u, v = keypoint_vectors[0:2, y, x]
+    u, v = keypoint_vectors[clazz*keypoints.shape[0]*2:clazz*keypoints.size(0)*2+2, y, x]
     v = -v  # Sign flip for u,v vs. x,y
 
     axs[0].quiver(x, y, u, v, color='red', scale=10, scale_units='inches', headwidth=6, headlength=6)
@@ -433,7 +444,8 @@ def make_prediction(pvnet,
                     device='cpu',
                     ransac_hypotheses=128,
                     ransac_iterations=10,
-                    genplots=True):
+                    genplots=True,
+                    augmented = True):
     device = torch.device("cuda:0" if device == "cuda" else "cpu")
     pvnet.to(device)
 
@@ -444,7 +456,7 @@ def make_prediction(pvnet,
     obj_keypoints_xy = test_sample['obj_keypoints_xy']
 
     if genplots:
-        plot_test_sample(test_sample, class_list)
+        plot_test_sample(test_sample, class_list, augmented)
 
     # For each pixel, a vector to each keypoint for each class
     class_vector_map = test_sample['class_vectormap'].to(device)  # [480, 640, k*2*c]
