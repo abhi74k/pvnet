@@ -2,7 +2,7 @@ import numpy as np
 
 import pvnet_utils
 from sklearn.neighbors import KDTree
-
+import csv
 
 def compute_add_error(pose_pred, pose_gt, points3d):
     gt_projected = (pose_gt[0:3, 0:3] @ points3d.T + pose_gt[0:3, 3].reshape(-1, 1)).T
@@ -62,9 +62,9 @@ def compute_2d_projection_symmetric_error(pose_pred, pose_gt, points3d):
 
 def compute_add_error_for_label(pose_pred, pose_gt, points3d, label):
     if label in ['eggbox', 'glue']:
-        return compute_add_error(pose_pred, pose_gt, points3d)
-    else:
         return compute_add_s_error(pose_pred, pose_gt, points3d)
+    else:
+        return compute_add_error(pose_pred, pose_gt, points3d)
 
 
 def compute_2d_projection_error_for_label(pose_pred, pose_gt, points3d, label):
@@ -81,36 +81,59 @@ def compute_error_metrics(pose_pred, pose_gt, points3d, label):
     return add_error, projection2d_error
 
 
+"""
+
+returns ADD metric results per batch
+
+Writes metric per sample to file specified at 
+'error_metric_dir/error_metrics_{error_file_suffix}.csv'
+"""
+
 def compute_error_metrics_for_dataset(test_dataset_reader,
                                       checkpoint_path,
-                                      label,
+                                      class_list,
                                       root_dir,
-                                      device='cpu'):
-    points3d = pvnet_utils.get_3d_points(label, root_dir=root_dir)
+                                      error_metric_dir = '',
+                                      error_file_suffix = '',                                      
+                                      device='cpu',):
+    
+    points3d = {}
+    for label in class_list:
+      points3d[label] = pvnet_utils.get_3d_points(label, root_dir=root_dir)
 
-    pvnet = pvnet_utils.create_model_and_load_weights(checkpoint_path, device=device, num_classes=1)
+    pvnet = pvnet_utils.create_model_and_load_weights(checkpoint_path, device=device, num_classes=len(class_list))
 
     add_metric_lst = []
     projection_metric_lst = []
 
-    for test_sample in test_dataset_reader:
-        assert test_sample['orig_class_label'] == label
+    with open(error_metric_dir+'error_metrics_{}.csv'.format(error_file_suffix), 'w', newline='') as csvfile:
+        errorwriter = csv.writer(csvfile, delimiter=',',quoting=csv.QUOTE_MINIMAL)
+        
+        errorwriter.writerow(['class_label','pose_path','add_error','projection_error'])
 
-        pred_pose = pvnet_utils.make_prediction(pvnet,
-                                                test_sample,
-                                                pvnet_utils.NUM_KEY_POINTS,
-                                                [label],
-                                                device=device,
-                                                root_dir=root_dir,
-                                                genplots=False)
+        for test_sample in test_dataset_reader:
+            class_label = test_sample['orig_class_label']
+            assert class_label in class_list
 
-        gt_pose = pvnet_utils.read_pose_file(test_sample['pose_path'])
+            pred_pose = pvnet_utils.make_prediction(pvnet,
+                                                    test_sample,
+                                                    pvnet_utils.NUM_KEY_POINTS,
+                                                    class_list,
+                                                    device=device,
+                                                    root_dir=root_dir,
+                                                    genplots=False)
 
-        add_error = compute_add_error_for_label(pred_pose, gt_pose, points3d, label)
-        projection_error = compute_2d_projection_error_for_label(pred_pose, gt_pose, points3d, label)
+            gt_pose = pvnet_utils.read_pose_file(test_sample['pose_path'])
 
-        add_metric_lst.append(add_error)
-        projection_metric_lst.append(projection_error)
+            add_error = compute_add_error_for_label(pred_pose, gt_pose, points3d[label], class_label)
+            projection_error = compute_2d_projection_error_for_label(pred_pose, gt_pose, points3d[label], class_label)
+
+            add_metric_lst.append(add_error)
+            projection_metric_lst.append(projection_error)
+
+            errorwriter.writerow([class_label,test_sample['pose_path'],add_error,projection_error])
 
     print(f'Avg ADD metric: {np.mean(add_metric_lst)}')
     print(f'Avg 2D projection error: {np.mean(projection_metric_lst)}')
+
+    

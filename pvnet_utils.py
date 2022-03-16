@@ -289,6 +289,27 @@ def create_model_and_load_weights(model_weights_path,
 
     return pvnet
 
+"""
+Helper to return x,y,u,v to plot quiver of vector map for a single keypoint 
+of a single class
+"""
+def keypoint_quiver_helper (keypointVector,
+                            num_keypoints,
+                            segmentation_output,
+                            class_idx,
+                            keypoint_number=0):
+  
+  b, c, h, w = keypointVector.size()
+  x, y = np.meshgrid(np.linspace(0, w - 1, 50), np.linspace(0, h - 1, 50))
+
+  # Get max clss for pixel, only show u,v for pixels where test_class is most likely class
+  _,singleClassMask = torch.max(segmentation_output, dim=0)
+  singleClassMask = (singleClassMask==class_idx).unsqueeze(0)
+  u, v = keypointVector[0, (class_idx * num_keypoints +keypoint_number)* 2:(class_idx * num_keypoints + keypoint_number + 1) * 2, y,
+          x] * singleClassMask.detach()[0:1, y, x]
+  v = -v
+
+  return x,y,u,v
 
 def find_keypoints_with_ransac(class_vector_map,
                                test_class,
@@ -296,19 +317,11 @@ def find_keypoints_with_ransac(class_vector_map,
                                num_keypoints,
                                ransac_hypotheses,
                                ransac_iterations):
+    
     keypointVector = class_vector_map.unsqueeze(0).detach()  # [1, k*2*c,h, w]
-
     padded_segmentation = test_class_mask.unsqueeze(0)
 
-    b, c, h, w = keypointVector.size()
-    x, y = np.meshgrid(np.linspace(0, w - 1, 50), np.linspace(0, h - 1, 50))
-
-    # Get max clss for pixel, only show u,v for pixels where test_class is most likely class
-    _,singleClassMask = torch.max(test_class_mask, dim=0)
-    singleClassMask = (singleClassMask==test_class).unsqueeze(0)
-    u, v = keypointVector[0, test_class * num_keypoints * 2:test_class * num_keypoints * 2 + 2, y,
-           x] * singleClassMask.detach()[0:1, y, x]
-    v = -v
+    x,y,u,v = keypoint_quiver_helper(keypointVector, num_keypoints, test_class_mask, test_class, 0)
 
     found_keypoints, inClass, hypotheses, vote_cts, vectorPtsInClass = keypoints.findKeypoints(
         padded_segmentation,
@@ -329,20 +342,16 @@ def find_keypoints_with_ransac(class_vector_map,
 def plot_test_sample(test_sample, class_list, augmented = True):
     img = test_sample['img']
     mask = test_sample['class_mask']
-    if(augmented):
-      pltimg = inverse_img_transforms(img)
-    else:
-      pltimg = T.ToPILImage()(img)
-
+    
+    pltimg = inverse_img_transforms(img)
+    
     clazz = int(test_sample['class_label'])
     clazz_str = class_list[int(test_sample['class_label'])]
 
     keypoints = test_sample['obj_keypoints_xy']
-    print(keypoints.shape)
     key_x, key_y = zip(*(keypoints.tolist()))
 
     keypoint_vectors = test_sample['class_vectormap'].permute(2, 0, 1)
-    print(keypoint_vectors.size())
     fig = plt.imshow(pltimg)
 
     fig, axs = plt.subplots(1, 2, figsize=(10, 40 / 3))
@@ -355,7 +364,7 @@ def plot_test_sample(test_sample, class_list, augmented = True):
 
     c, h, w = img.size()
     x, y = np.meshgrid(np.linspace(0, w - 1, 50, dtype='int'), np.linspace(0, h - 1, 50, dtype='int'))
-    u, v = keypoint_vectors[clazz*keypoints.shape[0]*2:clazz*keypoints.size(0)*2+2, y, x]
+    u, v = keypoint_vectors[clazz*keypoints.shape[0]*2:clazz*keypoints.shape[0]*2+2, y, x]
     v = -v  # Sign flip for u,v vs. x,y
 
     axs[0].quiver(x, y, u, v, color='red', scale=10, scale_units='inches', headwidth=6, headlength=6)
@@ -373,19 +382,47 @@ def plot_nn_segmentation(pred_mask, class_label, class_name):
     plt.title('NN Segmentation for {}({})'.format(class_name, class_label))
     plt.show()
 
+def plot_vector_prediction (img, 
+                            vectorPrediction,
+                            num_keypoints,
+                            segmentation_output,
+                            class_idx,
+                            obj_keypoints_xy,
+                            keypoint_number=0):
 
-def plot_ransac_results(img, obj_keypoints_xy, ransac_results):
+    keypointVector = vectorPrediction.unsqueeze(0).to('cpu').detach()  # [1, k*2*c,h, w]   
+    x,y,u,v = keypoint_quiver_helper (keypointVector,
+                            num_keypoints,
+                            segmentation_output.to('cpu'),
+                            class_idx,
+                            keypoint_number)
+
+    plt.figure(figsize=(10, 10))
+    im = plt.imshow(img)
+    gt_keypoint = obj_keypoints_xy[keypoint_number]
+    plt.scatter(gt_keypoint[0], gt_keypoint[1], marker='v', color="red")
+    plt.quiver(x, y, u, v, color='blue', scale=10, scale_units='inches', headwidth=6, headlength=6)    
+    plt.title('Vector for {}, Keypoint {}'.format(class_idx, keypoint_number))
+    plt.show()
+
+def plot_ransac_results(img, obj_keypoints_xy, 
+                          ransac_results, 
+                          show_keypoints = True,
+                          image_limits = True):
     x, y = ransac_results['x'], ransac_results['y']
     u, v = ransac_results['u'], ransac_results['v']
     found_keypoints = ransac_results['found_keypoints']
 
     plt.figure(figsize=(10, 10))
-    plt.imshow(inverse_img_transforms(img))
-    plt.quiver(x, y, u, v, color='red', scale=10, scale_units='inches', headwidth=6, headlength=6)
-    plt.scatter(obj_keypoints_xy[:, 0], obj_keypoints_xy[:, 1], marker='v', color="orange", linewidths=5)
-    plt.scatter(found_keypoints[:, 0], found_keypoints[:, 1], marker='x', color="blue")
-    plt.xlim([0, img.size(2)])
-    plt.ylim([img.size(1), 0])
+    
+    plt.imshow(img)
+    plt.quiver(x, y, u, v, color='blue', scale=10, scale_units='inches', headwidth=6, headlength=6)
+    if show_keypoints:
+      plt.scatter(obj_keypoints_xy[:, 0], obj_keypoints_xy[:, 1], marker='v', color="orange", linewidths=5)
+      plt.scatter(found_keypoints[:, 0], found_keypoints[:, 1], marker='x', color="blue")
+    if image_limits:
+      plt.xlim([0, img.size[0]])
+      plt.ylim([img.size[1], 0])
 
     plt.title('RANSAC Keypoint Voting')
 
@@ -451,30 +488,22 @@ def make_prediction(pvnet,
 
     test_class = int(test_sample['class_label'])
     test_class_str = class_list[int(test_sample['class_label'])]
-    test_image = inverse_img_transforms(test_sample['img'])
+    
+    orig_image = inverse_img_transforms(test_sample['img'])
+    
     test_class_mask = test_sample['class_mask'].to(device)
     obj_keypoints_xy = test_sample['obj_keypoints_xy']
-
-    if genplots:
-        plot_test_sample(test_sample, class_list, augmented)
 
     # For each pixel, a vector to each keypoint for each class
     class_vector_map = test_sample['class_vectormap'].to(device)  # [480, 640, k*2*c]
 
     # Image to tensor
-    test_image = torch.unsqueeze(img_transforms(test_image), 0).to(device)
+    test_image = test_sample['img'].to(device).unsqueeze(0)
 
     # Make a prediction
     pred = pvnet(test_image)
     pred_class = pred['class']
     pred_vectors = pred['vector']
-
-    if genplots:
-        plot_nn_segmentation(pred_mask=pred_class[0, test_class, :, :].detach().to('cpu').numpy(),
-                             class_label=test_class,
-                             class_name=class_list[test_class])
-
-        plot_multiclass_mask(pred_class[0], test_class, class_list=class_list)
 
     # Load the 3D points for the class
     points3d = get_3d_points(test_class_str, root_dir)
@@ -487,18 +516,36 @@ def make_prediction(pvnet,
                                                 num_keypoints,
                                                 ransac_hypotheses,
                                                 ransac_iterations)
-    plot_ransac_results(test_sample['img'].to('cpu'), obj_keypoints_xy, ransac_results)
 
     points2d = ransac_results['found_keypoints'][1:9, :].detach().numpy()  # skip 1st point which is the centroid
 
-    if genplots:
-        print(points2d)
 
     # PnP to compute R, t from
     rVec, R, t = solve_pnp(points3d, points2d)
 
     # Predict image points
     if genplots:
+        plot_test_sample(test_sample, class_list, augmented)      
+        plot_nn_segmentation(pred_mask=pred_class[0, test_class, :, :].detach().to('cpu').numpy(),
+                             class_label=test_class,
+                             class_name=class_list[test_class])
+
+        plot_multiclass_mask(pred_class[0], test_class, class_list=class_list)
+
+        plot_vector_prediction(orig_image, 
+                                pred_vectors[0], 
+                                num_keypoints, 
+                                pred_class[0], 
+                                test_class,
+                                obj_keypoints_xy,
+                                1)
+
+        plot_ransac_results(orig_image, 
+                          obj_keypoints_xy, 
+                          ransac_results, 
+                          show_keypoints=True,
+                          image_limits=False)      
+
         image_points_pred = cv2.projectPoints(points3d, rVec, t,
                                               kinect_camera_matrix,
                                               np.zeros(shape=[8, 1], dtype='float64'))[0].squeeze()
@@ -510,10 +557,5 @@ def make_prediction(pvnet,
     predicted_pose[0:3, 3] = t.reshape(-1)
 
     points3d = get_3d_points(test_class_str, root_dir=root_dir)
-    gt_pose = read_pose_file(test_sample['pose_path'])
-    add_error, projection2d_error = metrics_utils.compute_error_metrics(predicted_pose, gt_pose, points3d, test_class_str)
 
-    if genplots:
-        print(f'ADD error:{add_error}, Projection 2D error: {projection2d_error}')
-
-    return predicted_pose, add_error, projection2d_error
+    return predicted_pose
