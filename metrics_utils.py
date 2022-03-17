@@ -8,7 +8,7 @@ def compute_add_error(pose_pred, pose_gt, points3d):
     gt_projected = (pose_gt[0:3, 0:3] @ points3d.T + pose_gt[0:3, 3].reshape(-1, 1)).T
     pred_projected = (pose_pred[0:3, 0:3] @ points3d.T + pose_pred[0:3, 3].reshape(-1, 1)).T
 
-    add_metric = np.mean(np.linalg.norm(gt_projected - pred_projected))
+    add_metric = np.mean(np.linalg.norm(gt_projected - pred_projected, axis = 1))
 
     return add_metric
 
@@ -35,9 +35,7 @@ def compute_2d_projection_error(pose_pred, pose_gt, points3d):
                                                      pose_pred[0:3, 0:3],
                                                      pose_pred[0:3, 3].reshape(-1),
                                                      points3d)
-
-    projection_error = np.mean(np.linalg.norm(gt_2d_projection - pred_2d_projection))
-
+    projection_error = np.mean(np.linalg.norm(gt_2d_projection - pred_2d_projection, axis=1))
     return projection_error
 
 
@@ -110,28 +108,36 @@ def compute_error_metrics_for_dataset(test_dataset_reader,
         errorwriter = csv.writer(csvfile, delimiter=',',quoting=csv.QUOTE_MINIMAL)
         
         errorwriter.writerow(['class_label','pose_path','add_error','projection_error'])
-
+        idx = 0
         for test_sample in test_dataset_reader:
+            print("Sample {}".format(idx))
+
             class_label = test_sample['orig_class_label']
-            assert class_label in class_list
+            try:
+              assert class_label in class_list
 
-            pred_pose = pvnet_utils.make_prediction(pvnet,
-                                                    test_sample,
-                                                    pvnet_utils.NUM_KEY_POINTS,
-                                                    class_list,
-                                                    device=device,
-                                                    root_dir=root_dir,
-                                                    genplots=False)
+              pred_pose = pvnet_utils.make_prediction(pvnet,
+                                                      test_sample,
+                                                      pvnet_utils.NUM_KEY_POINTS,
+                                                      class_list,
+                                                      device=device,
+                                                      root_dir=root_dir,
+                                                      genplots=False)
 
-            gt_pose = pvnet_utils.read_pose_file(test_sample['pose_path'])
+              gt_pose = pvnet_utils.read_pose_file(test_sample['pose_path'])
 
-            add_error = compute_add_error_for_label(pred_pose, gt_pose, points3d[label], class_label)
-            projection_error = compute_2d_projection_error_for_label(pred_pose, gt_pose, points3d[label], class_label)
+              add_error = compute_add_error_for_label(pred_pose, gt_pose, points3d[label], class_label)
+              projection_error = compute_2d_projection_error_for_label(pred_pose, gt_pose, points3d[label], class_label)
 
-            add_metric_lst.append(add_error)
-            projection_metric_lst.append(projection_error)
+              add_metric_lst.append(add_error)
+              projection_metric_lst.append(projection_error)
+              errorwriter.writerow([class_label,test_sample['pose_path'],add_error,projection_error])
 
-            errorwriter.writerow([class_label,test_sample['pose_path'],add_error,projection_error])
+            except Exception as e:
+              print("Failed to generate prediction! Error: {}".format(e))
+              errorwriter.writerow([class_label,test_sample['pose_path'],"failed to generate prediction"])
+            
+            idx+=1
 
     print(f'Avg ADD metric: {np.mean(add_metric_lst)}')
     print(f'Avg 2D projection error: {np.mean(projection_metric_lst)}')
